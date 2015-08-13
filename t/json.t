@@ -3,10 +3,15 @@
 # This test is an example use case for the preprocessor,
 # and heavily showcases usage of the documentation feature.
 #
+# You can run it as an ordinary script by providing any command line argument.
+# A dash "-" reads from STDIN. E.g. run
+#
+#   perl json.t weird.json
+#
+# to have the script explain parse errors for you.
+#
 # Note how the parser clearly displays the location of the error,
-# If you run this code without the test but rather,
-# you will get a detailed listing of expected symbols and their documentation.
-# E.g. for the error in the string:
+# E.g. here the parser found a problem with an illegal string escape:
 #
 #   t/json.t ........................ 1/? Parser: 1:28: error: Error in SLIF parse: No lexeme found at line 1, column 28
 #   {"foo": 2.1E0, "bar": "baz\x65...
@@ -34,8 +39,19 @@ use Marpa::R2;
 use Test::More;
 use Test::Exception;
 
+use Util::Underscore;
+
 my $processed = MarpaX::R2::GrammarPreprocessor->preprocess(\*DATA);
 my $grammar = Marpa::R2::Scanless::G->new({ source => \$processed->slif_source });
+
+# enter script mode if any command line arguments were provided
+if (@ARGV) {
+    my $input = do { local $/; <> };
+    _::dd json_load($input);
+    exit;
+}
+
+# otherwise, enter test mode
 
 {
     my $input  = '{"foo": 2.1E, "bar" ...';
