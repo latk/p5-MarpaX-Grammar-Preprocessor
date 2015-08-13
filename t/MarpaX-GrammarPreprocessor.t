@@ -711,7 +711,7 @@ describe command_doc => sub {
     is_deeply $buffers, ['a', 'b'], 'buffers are unchanged';
     is_deeply $docs, {
         foo => "foo docs",
-        some_identifier => "foo\n  bar\nbaz\n",
+        some_identifier => "foo\n  bar\nbaz",
     }, 'stored documentation';
     is pos($input), length(qq(**** """ foo\n) . qq("""   bar\n) . qq(      """ baz\n)),
         'matcj position advanced';

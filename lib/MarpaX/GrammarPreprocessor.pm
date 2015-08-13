@@ -237,13 +237,21 @@ sub command_namespace {
 
 sub command_doc {
     my ($self) = @_;
-    my $docs =
-        (m/\G \s* hide/xgc) ? undef
-        : (m/\G( (?: \s* ["]["]["] [^\n]* (?: \n | \z ) )+ )/xgc) ? $1
-        : die "Expected docstring";
-    if (defined $docs) {
-        s/^ \s* ["]["]["][ ]? //xgm for $docs;
+    my $docs;
+    if (m/\G \s* hide/xgc) {
+        $docs = undef
     }
+    elsif (m/\G \s* ["]["]["]\ ([^\n]* (?: \n | \z ))/xgc) {
+        do {
+            $docs .= $1
+        } while (m/\G \s* ["]["]["]\ ([^\n]* (?: \n | \z ))/xgc);
+        $docs =~ s/\s*\z//;
+    }
+    else {
+        my $next_source = substr $_, pos, 20;
+        die "Expected docstring near ", _::pp $next_source, "...";
+    }
+
     my $symbol = $self->expect(IDENT);
     die "Symbol $symbol already documented" if exists $self->$DOCS->{$symbol};
     $self->$DOCS->{$symbol} = $docs;
@@ -260,7 +268,11 @@ __END__
 
 =head1 NAME
 
-MarpaX::GrammarPreprocessor - Shortcuts for SLIF grammars
+MarpaX::GrammarPreprocessor - Shortcuts for Marpa::R2 SLIF grammars
+
+=head1 VERSION
+
+v0.0_1
 
 =head1 SYNOPSIS
 
