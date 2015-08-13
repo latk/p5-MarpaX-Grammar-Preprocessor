@@ -28,13 +28,13 @@
 use strict;
 use warnings;
 
-use MarpaX::GrammarPreprocessor;
+use MarpaX::R2::GrammarPreprocessor;
 use Marpa::R2;
 
 use Test::More;
 use Test::Exception;
 
-my $processed = MarpaX::GrammarPreprocessor->preprocess(\*DATA);
+my $processed = MarpaX::R2::GrammarPreprocessor->preprocess(\*DATA);
 my $grammar = Marpa::R2::Scanless::G->new({ source => \$processed->slif_source });
 
 {

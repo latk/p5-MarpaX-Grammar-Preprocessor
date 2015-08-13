@@ -17,7 +17,7 @@ use Test::More 1;
 use Test::Exception;
 use Util::Underscore v1.3.0;
 
-use constant THE_CLASS => 'MarpaX::GrammarPreprocessor';
+use constant THE_CLASS => 'MarpaX::R2::GrammarPreprocessor';
 
 use_ok THE_CLASS;
 
@@ -93,7 +93,7 @@ describe _get_fresh_instance => sub {
 
 package Local::MockNextToken {
     use Moo;
-    extends 'MarpaX::GrammarPreprocessor';
+    extends 'MarpaX::R2::GrammarPreprocessor';
 
     has mock_tokens => (
         is => 'ro',
@@ -123,7 +123,7 @@ describe _pump => sub {
 
 package Local::PreprocessMock {
     use Moo;
-    extends 'MarpaX::GrammarPreprocessor';
+    extends 'MarpaX::R2::GrammarPreprocessor';
 
     use constant EXPECTED_SOURCE => 'the source';
     our $WAS_CALLED = 0;
@@ -447,7 +447,7 @@ describe next_token => sub {
     it 'delegates to commands' => sub {
         package Local::MockTestCommand {
             use Moo;
-            extends 'MarpaX::GrammarPreprocessor';
+            extends 'MarpaX::R2::GrammarPreprocessor';
 
             sub command_test {
                 /\G \s* (foo)\b/xgc

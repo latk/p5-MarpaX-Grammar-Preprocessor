@@ -1,4 +1,4 @@
-package MarpaX::GrammarPreprocessor;
+package MarpaX::R2::GrammarPreprocessor;
 
 use strict;
 use warnings;
@@ -268,7 +268,7 @@ __END__
 
 =head1 NAME
 
-MarpaX::GrammarPreprocessor - Shortcuts for Marpa::R2 SLIF grammars
+MarpaX::R2::GrammarPreprocessor - Shortcuts for Marpa::R2 SLIF grammars
 
 =head1 VERSION
 
@@ -276,10 +276,10 @@ v0.0_1
 
 =head1 SYNOPSIS
 
-    use MarpaX::GrammarPreprocessor;
+    use MarpaX::R2::GrammarPreprocessor;
     use Marpa::R2;
 
-    my $preprocessed = MarpaX::GrammarPreprocessor->preprocess(\*DATA)
+    my $preprocessed = MarpaX::R2::GrammarPreprocessor->preprocess(\*DATA)
     my $grammar = Marpa::R2::Scanless::G->new({ source => \$preprocessed->slif_source });
 
     __DATA__
