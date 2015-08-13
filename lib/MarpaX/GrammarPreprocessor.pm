@@ -276,7 +276,54 @@ v0.0_1
 
 =head1 SYNOPSIS
 
-TODO
+    use MarpaX::GrammarPreprocessor;
+    use Marpa::R2;
+
+    my $preprocessed = MarpaX::GrammarPreprocessor->preprocess(\*DATA)
+    my $grammar = Marpa::R2::Scanless::G->new({ source => \$preprocessed->slif_source });
+
+    __DATA__
+    # Everything that's legal in the SLIF DSL is also legal here
+
+    # We automatically get this prelude:
+    #   inaccessible is fatal by default
+    #   :default ::= action => ::first
+    #   lexeme default = latm => 1
+
+    # A namespace allows us to gensym names for %helper rules
+    \namespace Foo ::= %BAR | %Baz
+    %BAR ~ 'bar'        # really Foo__BAR
+    %Baz ::= %BAR %BAR  # really Foo__Baz
+
+    # The next namespace is totally unrelated.
+    \namespace
+    Qux ::= %BAR
+    %BAR ~ 'quxbar'     # really Qux__BAR
+
+    # Associate a docstring with the next symbol.
+    # Docstrings can span multiple lines, all beginning with a triple quote.
+    \namespace
+    \doc""" a list of values. Examples:
+        """     []          (empty list)
+        """     [1, 2, 3]   (list with three integers)
+    List ::= (LEFT_BRACKET) %Items (RIGHT_BRACKET)
+    %Items ::= Value* \sep COMMA  # \sep expands to "separator => "
+
+    # Use { curly braces } to specify an inline rule.
+    # Inline rules still need a name.
+    # \array expands to "action => ::array"
+    \namespace
+    \doc""" a key-value dictionary
+    Dict ::= (LEFT_BRACE) { %Items ::= %KVItem* \sep COMMA \array } (RIGHT_BRACE)
+    %KVItem ::= Key (COLON) Value \array
+
+    # Suppress documentation for any symbol.
+    # Great for internal helper rules!
+    \doc hide
+    Shhh ~ 'no one can see me'
+
+    # Easily link action rules with \do
+    Action ::= Stations \do Action # expands to "action => do_Action"
 
 =head1 DESCRIPTION
 
