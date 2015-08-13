@@ -154,7 +154,7 @@ sub next_token {
         if (m/\G [%]/xgc) {
             my $ns = $self->$NAMESPACE;
             die "No namespace was set" if not defined $ns;
-            return IDENT, $ns . NAMESPACE_SEPARATOR . $1 if m/\G ([\w]+) /xgc;
+            return IDENT, $ns . $self->NAMESPACE_SEPARATOR . $1 if m/\G ([\w]+) /xgc;
             return IDENT, $ns;
         }
         return LITERAL, $1 if m/\G( ['] [^']+ ['] (?: [:]i )? )/xgc;
@@ -327,11 +327,158 @@ v0.0_1
 
 =head1 DESCRIPTION
 
-TODO
+This module is a preprocessor for SLIF grammars.
+Any valid SLIF grammar should be passed through with no modifications,
+except for the prelude that is added.
+
+This preprocessor is fairly restricted and mostly only does local,
+token-based substitutions, similar to the C preprocessor.
+The inline rule feature is more advanced,
+but still operates on a source level.
+Please keep this low-level approach in mind when using the module
+– it does not build an AST for the SLIF, and does not use Marpa itself.
+
+=head2 Commands
+
+The most prominent feature are the commands.
+These are introduced by a backslash,
+and call back to Perl code which may do custom parsing
+or use a simple token-based system to process the SLIF grammar.
+Example: C<\lax \sep COMMA> is transformed to C<< proper => 0 separator => COMMA >>.
+
+=head2 Namespaces
+
+Frequently, we need simple helper rules
+that are of no concern for the rest of the grammar.
+This preprocessor can mark any identifier as the current C<\namespace>.
+Any plain C<%> (percent symbol) is then used as a reference to the current namespace,
+and any C<%name> (name prefixed with percent symbol) is prefixed with the current namespace.
+This makes it easy to have quasi-private names without too much typing.
+
+Example:
+
+    \namespace
+    Term ::= % (%PLUS) Factor
+    %PLUS ~ '+'
+
+Is transformed to:
+
+    Term ::= Term (Term__PLUS) Factor
+    Term__PLUS ~ '+'
+
+The namespace separator is currently set to double underscores,
+so you shouldn't use them in your identifiers
+(see also the stabilit policy section).
+
+=head2 Inline Rules
+
+Many rules in a SLIF grammar are only used in one place,
+and are due to SLIF restrictions.
+E.g. a sequence rule must be a rule of its own.
+This preprocessor allows you to specify rules inline at their point of usage.
+Unfortunately, they still need a name.
+The preprocessor will then replace the inline rule with its symbol,
+and defer the defintion of the rule until a safe state is reached.
+
+Example:
+
+    \namespace
+    List ::= ('[') { %Items ::= Value* \sep COMMA \array } (']')
+
+Is transformed to:
+
+    List ::= ('[') List__Items (']')
+    List__Items ::= Value* separator => COMMA action => ::array
+
+
+=head2 Docstrings
+
+The C<\doc> commands lets you annotate a symbol with a docstring.
+After processing, these docstrings are available as a name to docstring hash ref.
+They can be used to build fairly sophisticated help systems that display relevant information on parse errors.
+
+Example:
+
+    \doc""" A list contains a sequence of zero or more values.
+        """ It must start and end with square brackets,
+        """ and contains comma-separated values. Example:
+        """
+        """    []      # an empty list
+        """    [1]     # list with single element
+        """    [1,]    # trailing comma is allowd
+        """    [1,2,3] # list with three values
+        """    [ 1 , 2 , 3 ]   # space within the array is ignored
+    List ::= ...
+
+This documentation could then be used to display a help message like this to the user:
+
+    test.foo:42:4: error: no token found
+        (1, 2, 3)
+        ^
+    at character '(' U+0028 LEFT PARENTHESIS
+
+    expected:
+      - List: A list contains a sequence of zero or more values.
+        It must start and end with square brackets,
+        and contains comma-separated values. Example:
+
+            []      # an empty list
+            [1]     # list with single element
+            [1,]    # trailing comma is allowd
+            [1,2,3] # list with three values
+            [ 1 , 2 , 3 ]   # space within the array is ignored
+      - Dict: A dict contains any number of key-value pairs
+        ...
+    ...
+
+This module does not include such a help system!
+However, you can see the test case C<t/json.t>
+for a sample implementation of such “intelligent” error messages.
+Run it as a script and pass it faulty input to see it in action.
+
+=head2 Custom Commands
+
+You can add custom commands by subclassing this module
+and adding a C<command_FooBar> method for a C<\FooBar> command.
+No additional registration has to be done.
+Since this module uses the Moo object system, I recommend you use it as well.
+
+When your command is found, the processor will invoke that method,
+The SLIF source will be available in the C<$_> variable,
+and C<pos()> will be set to the current position.
+You can therefore use an C<m/\G ... /gc> style match to do your own parsing.
+Alternatively, you can C<expect()> a certain token type,
+or poll for the C<next_token()> regardless of type.
+Please see their reference documentation for more details.
+
+The command must return a list of two values: the token type and the token value.
+Valid token types are the constants/methods
+C<IDENT> which refers to any identifier or symbol that can be used on the left hand side of any rule defintion,
+C<LITERAL> which can be a literal string or a character class,
+C<CLOSE> which is a right curly brace, and
+C<OP> which is anything else.
+Pick an appropriate token type depending on how that value might be used.
+E.g. if the return value is to be used on the right hand side of a rule,
+it must be an C<IDENT> or C<LITERAL>.
+
+You may also use the C<buffer_push()>, C<buffer_write()>, and C<buffer_join()> methods.
+The buffer system manages any number of buffers.
+One buffer is the currently selected buffer, another is the deferred buffer.
+Only write to the current buffer if you know it is safe to do so
+(e.g. if your command is supposed to be only used at the start of a rule).
+Otherwise, select the deferred buffer with C<buffer_write()>.
+Once finished, you will need to switch back with C<buffer_join()>.
+The contents of the deferred buffer will be appended to the main buffer
+once that buffer is complete and in a presumably syntactically safe state.
+
+Actually, buffers are way less complicated than that – just read the source of this module.
 
 =head1 METHODS
 
-TODO
+Some methods are only valid during processing,
+other only for retrieval after processing.
+Some methods may be overridable, and be marked as such.
+Please see also the stability policy section.
 
 =head1 STATUS OF THIS MODULE/STABILITY POLICY
 
