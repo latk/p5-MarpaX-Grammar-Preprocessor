@@ -909,7 +909,7 @@ sub expect {
 =head1 COMMANDS
 
 This section contains reference documentation for all preprocessor commands.
-For a general overview of the available syntax, see the L<OVERVIEW section|/"OVERVIEW"> instead.
+For a general overview of the available syntax, see the L<DESCRIPTION section|/"DESCRIPTION"> instead.
 
 =head2 command \array
 
