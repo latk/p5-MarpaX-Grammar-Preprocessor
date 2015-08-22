@@ -452,6 +452,35 @@ describe next_token => sub {
         is pos($input), 4 + length q([^\\w\\\\a-z\\-\\]\\[{]), 'match position advanced';
     };
 
+    it 'dispatches docstrings to doc command' => sub {
+        my $input = q(****"""****);
+        pos($input) = 4;
+
+        my $got_position;
+
+        package Local::MockDocCommand {
+            use Moo;
+            extends 'MarpaX::Grammar::Preprocessor';
+
+            sub command_doc;
+        }
+
+        # use this one weird trick so that the method can be a closure
+        local *Local::MockDocCommand::command_doc = sub {
+            my ($self) = @_;
+            $got_position = pos;
+            return $self->IDENT, 'Foo';
+        };
+
+        my $self = Local::MockDocCommand->_MarpaX_Grammar_Preprocessor_get_fresh_instance(\$input);
+
+        my @result = $self->next_token;
+
+        is_deeply \@result, [THE_CLASS->IDENT, 'Foo'], 'got the expeced return value';
+        is $got_position, 4, 'doc command got correct position';
+        is pos($input), 4, 'match position unchanged';
+    };
+
     it 'delegates to commands' => sub {
         package Local::MockTestCommand {
             use Moo;

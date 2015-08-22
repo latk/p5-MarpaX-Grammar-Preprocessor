@@ -73,9 +73,9 @@ use version 0.77; our $VERSION = qv('v0.0_1');
     # Associate a docstring with the next symbol.
     # Docstrings can span multiple lines, all beginning with a triple quote.
     \namespace
-    \doc""" a list of values. Examples:
-        """     []          (empty list)
-        """     [1, 2, 3]   (list with three integers)
+    """ a list of values. Examples:
+    """     []          (empty list)
+    """     [1, 2, 3]   (list with three integers)
     List ::= (LEFT_BRACKET) %Items (RIGHT_BRACKET)
     %Items ::= Value* \sep COMMA  # \sep expands to "separator => "
 
@@ -83,7 +83,7 @@ use version 0.77; our $VERSION = qv('v0.0_1');
     # Inline rules still need a name.
     # \array expands to "action => ::array"
     \namespace
-    \doc""" a key-value dictionary
+    """ a key-value dictionary
     Dict ::= (LEFT_BRACE) { %Items ::= %KVItem* \sep COMMA \array } (RIGHT_BRACE)
     %KVItem ::= Key (COLON) Value \array
 
@@ -179,15 +179,15 @@ They can be used to build fairly sophisticated help systems that display relevan
 
 Example:
 
-    \doc""" A list contains a sequence of zero or more values.
-        """ It must start and end with square brackets,
-        """ and contains comma-separated values. Example:
-        """
-        """    []      # an empty list
-        """    [1]     # list with single element
-        """    [1,]    # trailing comma is allowd
-        """    [1,2,3] # list with three values
-        """    [ 1 , 2 , 3 ]   # space within the array is ignored
+    """ A list contains a sequence of zero or more values.
+    """ It must start and end with square brackets,
+    """ and contains comma-separated values. Example:
+    """
+    """    []      # an empty list
+    """    [1]     # list with single element
+    """    [1,]    # trailing comma is allowd
+    """    [1,2,3] # list with three values
+    """    [ 1 , 2 , 3 ]   # space within the array is ignored
     List ::= ...
 
 This documentation could then be used to display a help message like this to the user:
@@ -215,6 +215,8 @@ This module does not include such a help system!
 However, you can see the test case C<t/json.t>
 for a sample implementation of such “intelligent” error messages.
 Run it as a script and pass it faulty input to see it in action.
+
+See the L<\doc command|/"command \doc"> for more information in docstrings.
 
 =head2 Custom Commands
 
@@ -852,6 +854,7 @@ sub next_token {
             return IDENT, $name;
         }
         return CLOSE,   undef   if m/\G [\}]/xgc;
+        return $self->command_doc   if m/\G (?= ["]["]["] )/xgc;
         return OP,      $1      if m/\G( [^\s\#\w\%\'\[\\]+ )/xgc;
         die "Unknown grammar str '" . (substr $_, pos, 20) . "...'";
     }
@@ -1133,11 +1136,17 @@ sub command_namespace {
 
     \doc hide IDENT
     \doc DOCSTRING IDENT
+    DOCSTRING IDENT
 
 Associate a C<DOCSTRING> with a given C<IDENT>,
 or C<hide> a symbol from the doc system.
 
 You can retrieve the documentation hash via L<C<docs()>|/"docs"> from the result object.
+
+The C<\doc> command can be omitted when using docstrings:
+C<\doc """ foo> and C<""" foo> are equivalent.
+However, you must explicitly use the command when using it to hide a symbol from the documentation system:
+C<\doc hide>.
 
 B<IDENT>
 is the symbol you want to document.
@@ -1153,11 +1162,9 @@ B<Example:>
     \doc hide
     InternalSymbol ::= ...
 
-    \doc
     """ a sequence of zero or more values
     List ::= Value* \sep COMMA \array
 
-    \doc
     """ a key-value list
     """
     """ Each key-value pair is separated by a colon. Example:

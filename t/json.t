@@ -210,10 +210,10 @@ sub pinpoint_marpa_error {
 
 __DATA__
 \namespace
-    \doc """ a JSON document, can either be an Object or an Array
+    """ a JSON document, can either be an Object or an Array
     Json ::= (_) { \doc hide %TopLevelItem ::= Object | Array } (_)
 
-    \doc """ any value
+    """ any value
     Value ::= Object | Array | String | Number | Boolean | Null
 
     \doc hide
@@ -223,7 +223,7 @@ __DATA__
     unicorn ~ [^\s\S] # can never be lexed
 
 \namespace
-    \doc """ optional white space
+    """ optional white space
     _ ::= %Item* \null
     \doc hide
     %Item
@@ -237,50 +237,50 @@ __DATA__
     \doc hide
     %COMMENT_INTRO ~ '//' | '/*' | '#'
 
-    \doc """ ERROR: JSON does not support comments!
+    """ ERROR: JSON does not support comments!
     %ERROR ~ unicorn
 
 \namespace
-    \doc """ either "true" or "false"
+    """ either "true" or "false"
     Boolean
-        ::= {   \doc """ a "true" boolean
+        ::= {   """ a "true" boolean
                 %TRUE ~ 'true' } \do True
-        |   {   \doc """ a "false" boolean
+        |   {   """ a "false" boolean
                 %FALSE ~ 'false' } \do False
 
 \namespace
-    \doc """ "null", the absence of values
+    """ "null", the absence of values
     Null
-        ::= {   \doc """ "null", the absence of values
+        ::= {   """ "null", the absence of values
                 %NULL ~ 'null' } \null
 
 \namespace
-    \doc """ a key-value collection
+    """ a key-value collection
     Object ::= (OP_LBRACE _) { \doc hide %Items ::= %Item* \sep Sep \array } (_ OP_RBRACE) \do Object
 
-    \doc """ a key-value pair
+    """ a key-value pair
     %Item ::= String (_ OP_COLON _) Value \array
 
 \namespace
-    \doc """ a sequential collection
+    """ a sequential collection
     Array ::= (OP_LBRACKET _) { \doc hide %Items ::= Value* \sep Sep \array } (_ OP_RBRACKET)
 
 \namespace
-    \doc """ separates items in an object or list
+    """ separates items in an object or list
     Sep ::= (_) OP_COMMA (_) \null
 
 \namespace
-    \doc """ quoted text with various allowed escapes
+    """ quoted text with various allowed escapes
     String ::= (OP_DQ) { \doc hide %Items ::= %Item* \array } (OP_DQ) \do String
 
     \doc hide
     %Item
-        ::= {   \doc """ normal characters in a string: anything but a quote or backslash
+        ::= {   """ normal characters in a string: anything but a quote or backslash
                 %RUN ~ [^"\\]+ }
         |   (%BACKSLASH) {
                 \doc hide
                 %Escape
-                ::= {   \doc """ escaped literal characters: double quote, backslash, solidus
+                ::= {   """ escaped literal characters: double quote, backslash, solidus
                         %ESCAPED_LITERAL ~ [\\"/] }
                 |   {   \doc""" escape codes:
                             """ \b : backspace
@@ -288,71 +288,71 @@ __DATA__
                             """ \r : carriage return
                             """ \t : horizontal tab
                         %ESCAPE_CODE ~ [bfnrt] } \do StringEscape
-                |   {   \doc """ an unicode escape for a 16-bit surrogate half in hex notation, e.g. \u2603 for ☃
+                |   {   """ an unicode escape for a 16-bit surrogate half in hex notation, e.g. \u2603 for ☃
                         %ESCAPE_UNICODE ~ 'u' %xdigit %xdigit %xdigit %xdigit
                         \doc hide
                         %xdigit ~ [\p{PosixXDigit}]
                     } \do StringUnicodeEscape
             }
-    \doc """ the backslash is the escape character in strings
+    """ the backslash is the escape character in strings
     %BACKSLASH ~ '\'
 
 \namespace
-    \doc """ integer or real number
+    """ integer or real number
     Number
-        ::= {   \doc """ A Number may start with an optional minus
+        ::= {   """ A Number may start with an optional minus
                 %OptionalSign
                     ::= NULL
-                    |   {   \doc """ "-" starts a negative number
+                    |   {   """ "-" starts a negative number
                             %MINUS ~ '-'} }
             %LEADING_DIGITS
             { \doc hide %OptionalFractional ::= NULL | %FractionalPart }
             { \doc hide %OptionalExponent ::= NULL | %Exponent }
             \do Number
 
-    \doc """ The fractional part of a number, e.g. ".0230"
+    """ The fractional part of a number, e.g. ".0230"
     %FractionalPart
-        ::= {  \doc """ a period "." separates the integral part from the fractional part of a number
+        ::= {  """ a period "." separates the integral part from the fractional part of a number
                 %PERIOD ~ '.' }
             %DIGITS
             \array
 
-    \doc """ The exponent of a number, e.g. "E-02".
+    """ The exponent of a number, e.g. "E-02".
     %Exponent
-        ::= {   \doc """ The exponent separator "e" or "E" separates the exponent from the rest of the number
+        ::= {   """ The exponent separator "e" or "E" separates the exponent from the rest of the number
                 %EXPONENT_SEPARATOR ~ [eE] }
-            {   \doc """ The exponent can be positive "+" or negative "-", defaulting to positive
+            {   """ The exponent can be positive "+" or negative "-", defaulting to positive
                 %OptionalExponentSign
                     ::= NULL
-                    |   {   \doc """ The exponent can be positive "+" or negative "-", defaulting to positive
+                    |   {   """ The exponent can be positive "+" or negative "-", defaulting to positive
                             %EXPONENT_SIGN ~ [+-] } }
             %DIGITS
             \array
 
 
-    \doc """ an arbitrary sequence of decimal digits
+    """ an arbitrary sequence of decimal digits
     %DIGITS ~ [0-9]+
 
-    \doc """ the integral part of a number, e.g. "0", "7", "23"
+    """ the integral part of a number, e.g. "0", "7", "23"
     %LEADING_DIGITS ~ '0' | [1-9] { %leading_digits_rest ~ [0-9]* }
 
-\doc """ ":", separates key-value items
+""" ":", separates key-value items
 OP_COLON ~ ':'
 
-\doc """ "," separates items in a list or object
+""" "," separates items in a list or object
 OP_COMMA ~ ','
 
-\doc """ '"' starts and ends a string
+""" '"' starts and ends a string
 OP_DQ ~ '"'
 
-\doc """ "{" begins an object
+""" "{" begins an object
 OP_LBRACE ~ '{'
 
-\doc """ "}" ends an object
+""" "}" ends an object
 OP_RBRACE ~ '}'
 
-\doc """ "[" begins an array
+""" "[" begins an array
 OP_LBRACKET ~ '['
 
-\doc """ "]" ends an array
+""" "]" ends an array
 OP_RBRACKET ~ ']'
