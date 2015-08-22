@@ -908,7 +908,8 @@ sub expect {
 
 =head1 COMMANDS
 
-TODO
+This section contains reference documentation for all preprocessor commands.
+For a general overview of the available syntax, see the L<OVERVIEW section|/"OVERVIEW"> instead.
 
 =head2 command \array
 
@@ -1215,7 +1216,7 @@ all valid SLIF grammars should be passed through without modifications
 
 The CPAN namespace C<MarpaX::Grammar::Preprocessor::*> is reserved by this module for future use.
 If you want to upload a module in this namespace (which might be reasonable for extensions),
-then please discuss this with the L<author/"AUTHOR"> first.
+then please discuss this with the L<author|/"AUTHOR"> first.
 Maybe your changes could be patched into this module instead.
 If not, I could at least place a link to your extension in this documentation.
 
