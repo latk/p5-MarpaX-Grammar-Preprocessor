@@ -278,6 +278,9 @@ lexical_has source_ref  => (accessor => \my $SOURCE_REF);
 # Manipulate this only through the buffer_* methods!
 lexical_has buffers     => (accessor => \my $BUFFERS);
 
+# avoids generating the same optional rule twice
+lexical_has optional_rule_cache => (accessor => \my $OPTIONAL_RULE_CACHE);
+
 # default-initialize the lexical attributes
 # since Moo can't do it for us :(
 sub BUILD {
@@ -285,6 +288,7 @@ sub BUILD {
     $self->$NAMESPACE(undef);
     $self->$DOCS({});
     $self->$BUFFERS([$self->SLIF_PRELUDE]); # prime the first buffer
+    $self->$OPTIONAL_RULE_CACHE({});
     return;
 }
 
@@ -299,6 +303,7 @@ sub _MarpaX_Grammar_Preprocessor_test_accessors {
         docs        => $DOCS,
         source_ref  => $SOURCE_REF,
         buffers     => $BUFFERS,
+        optional_rule_cache => $OPTIONAL_RULE_CACHE,
     }->{$name};
 }
 
@@ -1196,6 +1201,54 @@ sub command_doc {
     die "Symbol $symbol already documented" if exists $self->$DOCS->{$symbol};
     $self->$DOCS->{$symbol} = $docs;
     return IDENT, $symbol;
+}
+
+=head2 command \optional
+
+    \optional RULE
+
+Make a G1 C<RULE> optional.
+
+The optional version of this rule will have a null case that carries an undef value,
+or a case that proxies to the given C<RULE>.
+
+This is really comfortable if you have an optional right hand side item in a larger rule.
+Otherwise, you would have to create an explicit optional rule (like this command does)
+or create two alternatives of the right hand side where one alternative does not include the optional rule.
+
+B<RULE>: an C<IDENT> token of a G1 symbol, i.e. a rule that was declared like C<RULE ::= ...>.
+The C<RULE> should not be nullable itself.
+
+B<Expands to> a gensym'd name referring to an optional version of the rule.
+
+B<Inserts:>
+
+    RULE__Optional ::= action => ::undef;
+    RULE__Optional ::= RULE action => ::first
+
+B<Example:>
+
+    \namespace
+    Conditional ::=
+        (KW_IF) Expression
+        COMPOUND_STATEMENT
+        \optional { %Else ::= (KW_ELSE) COMPOUND_STATEMENT }
+        \do Conditional
+
+=cut
+
+sub command_optional {
+    my ($self) = @_;
+    my $rule = $self->expect(IDENT);
+    return IDENT, $self->$OPTIONAL_RULE_CACHE()->{$rule} //= do {
+        my $optional_rule = $rule . $self->NAMESPACE_SEPARATOR . "Optional";
+
+        $self->buffer_push;
+        $self->buffer_write("$optional_rule ::= action => ::undef; $optional_rule ::= $rule action => ::first");
+        $self->buffer_join;
+
+        $optional_rule;
+    };
 }
 
 1;

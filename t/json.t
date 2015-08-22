@@ -217,9 +217,6 @@ __DATA__
     Value ::= Object | Array | String | Number | Boolean | Null
 
     \doc hide
-    NULL ::= \null # an empty placeholder
-
-    \doc hide
     unicorn ~ [^\s\S] # can never be lexed
 
 \namespace
@@ -300,14 +297,12 @@ __DATA__
 \namespace
     """ integer or real number
     Number
-        ::= {   """ A Number may start with an optional minus
-                %OptionalSign
-                    ::= NULL
-                    |   {   """ "-" starts a negative number
-                            %MINUS ~ '-'} }
+        ::= \doc hide
+            \optional { """ "-" starts a negative number
+                        %MINUS ~ '-'}
             %LEADING_DIGITS
-            { \doc hide %OptionalFractional ::= NULL | %FractionalPart }
-            { \doc hide %OptionalExponent ::= NULL | %Exponent }
+            \doc hide \optional %FractionalPart
+            \doc hide \optional %Exponent
             \do Number
 
     """ The fractional part of a number, e.g. ".0230"
@@ -321,11 +316,9 @@ __DATA__
     %Exponent
         ::= {   """ The exponent separator "e" or "E" separates the exponent from the rest of the number
                 %EXPONENT_SEPARATOR ~ [eE] }
-            {   """ The exponent can be positive "+" or negative "-", defaulting to positive
-                %OptionalExponentSign
-                    ::= NULL
-                    |   {   """ The exponent can be positive "+" or negative "-", defaulting to positive
-                            %EXPONENT_SIGN ~ [+-] } }
+            \doc hide
+            \optional { """ The exponent can be positive "+" or negative "-", defaulting to positive
+                        %EXPONENT_SIGN ~ [+-] }
             %DIGITS
             \array
 

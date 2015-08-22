@@ -808,6 +808,38 @@ B<Example:>
     Dict ::= KVPair* \sep COMMA \array
     KVPair ::= String (COLON) Value \array
 
+=head2 command \optional
+
+    \optional RULE
+
+Make a G1 C<RULE> optional.
+
+The optional version of this rule will have a null case that carries an undef value,
+or a case that proxies to the given C<RULE>.
+
+This is really comfortable if you have an optional right hand side item in a larger rule.
+Otherwise, you would have to create an explicit optional rule (like this command does)
+or create two alternatives of the right hand side where one alternative does not include the optional rule.
+
+B<RULE>: an C<IDENT> token of a G1 symbol, i.e. a rule that was declared like C<RULE ::= ...>.
+The C<RULE> should not be nullable itself.
+
+B<Expands to> a gensym'd name referring to an optional version of the rule.
+
+B<Inserts:>
+
+    RULE__Optional ::= action => ::undef;
+    RULE__Optional ::= RULE action => ::first
+
+B<Example:>
+
+    \namespace
+    Conditional ::=
+        (KW_IF) Expression
+        COMPOUND_STATEMENT
+        \optional { %Else ::= (KW_ELSE) COMPOUND_STATEMENT }
+        \do Conditional
+
 =head1 STATUS OF THIS MODULE/STABILITY POLICY
 
 This module is reasonably complete

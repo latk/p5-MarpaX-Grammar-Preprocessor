@@ -40,6 +40,7 @@ _::const my $__namespace__  => THE_CLASS->_MarpaX_Grammar_Preprocessor_test_acce
 _::const my $__docs__       => THE_CLASS->_MarpaX_Grammar_Preprocessor_test_accessors('docs');
 _::const my $__source_ref__ => THE_CLASS->_MarpaX_Grammar_Preprocessor_test_accessors('source_ref');
 _::const my $__buffers__    => THE_CLASS->_MarpaX_Grammar_Preprocessor_test_accessors('buffers');
+_::const my $__optional_rule_cache__ => THE_CLASS->_MarpaX_Grammar_Preprocessor_test_accessors('optional_rule_cache');
 
 describe constants => sub {
     for my $NAME (qw/IDENT LITERAL OP CLOSE/) {
@@ -751,7 +752,57 @@ describe command_doc => sub {
         some_identifier => "foo\n  bar\nbaz",
     }, 'stored documentation';
     is pos($input), length(qq(**** """ foo\n) . qq("""   bar\n) . qq(      """ baz\n)),
-        'matcj position advanced';
+        'match position advanced';
+};
+
+describe command_optional => sub {
+    it 'generates optional rules' => sub {
+        my $input = q(****++++);
+        pos($input) = 4;
+        my @tokens = (
+            [THE_CLASS->IDENT, 'some_identifier'],
+            [THE_CLASS->OP => 'we should never see this'],
+        );
+        my $optional_name = 'some_identifier__Optional';
+
+        my $self = Local::MockNextToken->new(mock_tokens => \@tokens);
+        my $buffers = _set_buffers($self, 'a;', 'b;');
+
+        my @result = do {
+            local *_ = \$input;
+            $self->command_optional;
+        };
+
+        is_deeply \@result, [THE_CLASS->IDENT, $optional_name], 'returned name of optional symbol';
+        is_deeply
+            $buffers,
+            ['a;', "b;$optional_name ::= action => ::undef; $optional_name ::= some_identifier action => ::first; "],
+            'optional rule was written to deferred buffer';
+        is pos($input), 4, 'match position unchanged';
+    };
+
+    it 'caches optional rules' => sub {
+        my $input = q(****++++);
+        pos($input) = 4;
+        my @tokens = (
+            [THE_CLASS->IDENT, 'some_identifier'],
+            [THE_CLASS->OP => 'we should never see this'],
+        );
+        my $optional_name = 'some_identifier__Optional';
+
+        my $self = Local::MockNextToken->new(mock_tokens => \@tokens);
+        my $buffers = _set_buffers($self, 'a;', 'b;');
+        $self->$__optional_rule_cache__()->{some_identifier} = $optional_name;
+
+        my @result = do {
+            local *_ = \$input;
+            $self->command_optional;
+        };
+
+        is_deeply \@result, [THE_CLASS->IDENT, $optional_name], 'returned name of optional symbol';
+        is_deeply $buffers, ['a;', 'b;'], 'buffers unchanged';
+        is pos($input), 4, 'match position unchanged';
+    };
 };
 
 done_testing;
