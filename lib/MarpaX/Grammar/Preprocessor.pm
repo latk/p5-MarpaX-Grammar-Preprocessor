@@ -1369,6 +1369,19 @@ Lukas Atkinson (cpan: AMON) <amon@cpan.org>
 
 =head1 COPYRIGHT AND LICENSE
 
-This software is copyright (c) 2015 by Lukas Atkinson.
+    This software is copyright (c) 2015 by Lukas Atkinson.
 
-This is free software; you can redistribute it and/or modify it under the same terms as the Perl 5 programming language system itself.
+    This module is free software; you can redistribute it and/or
+    modify it under the same terms as Perl5 v14.0 or (at your option)
+    any later version. Perl lets you choose between either:
+
+    a) the GNU General Public License as published by the Free Software
+       Foundation; either version 1, or (at your option) any later
+       version, or
+
+    b) the "Artistic License" which comes with Perl.
+
+    For more details, see the full text of the licenses at
+    <http://www.perlfoundation.org/artistic_license_1_0>,
+    <http://www.gnu.org/licenses/gpl-1.0.html>, and
+    <http://www.gnu.org/licenses/gpl-3.0.html>.
