@@ -17,7 +17,7 @@ use Test::More 1;
 use Test::Exception;
 use Util::Underscore v1.3.0;
 
-use constant THE_CLASS => 'MarpaX::R2::GrammarPreprocessor';
+use constant THE_CLASS => 'MarpaX::Grammar::Preprocessor';
 
 use_ok THE_CLASS;
 
@@ -36,10 +36,10 @@ sub case {
     return subtest "case $name", $body;
 }
 
-_::const my $__namespace__  => THE_CLASS->_test_accessors('namespace');
-_::const my $__docs__       => THE_CLASS->_test_accessors('docs');
-_::const my $__source_ref__ => THE_CLASS->_test_accessors('source_ref');
-_::const my $__buffers__    => THE_CLASS->_test_accessors('buffers');
+_::const my $__namespace__  => THE_CLASS->_MarpaX_Grammar_Preprocessor_test_accessors('namespace');
+_::const my $__docs__       => THE_CLASS->_MarpaX_Grammar_Preprocessor_test_accessors('docs');
+_::const my $__source_ref__ => THE_CLASS->_MarpaX_Grammar_Preprocessor_test_accessors('source_ref');
+_::const my $__buffers__    => THE_CLASS->_MarpaX_Grammar_Preprocessor_test_accessors('buffers');
 
 describe constants => sub {
     for my $NAME (qw/IDENT LITERAL OP CLOSE/) {
@@ -51,16 +51,16 @@ describe constants => sub {
     }
 };
 
-describe _get_fresh_instance => sub {
+describe _MarpaX_Grammar_Preprocessor_get_fresh_instance => sub {
     it 'creates an instance' => sub {
-        my $self = THE_CLASS->_get_fresh_instance;
+        my $self = THE_CLASS->_MarpaX_Grammar_Preprocessor_get_fresh_instance;
 
         ok _::blessed $self, 'instance is an object';
         isa_ok $self, THE_CLASS, 'instance is of expected class';
     };
 
     it 'initializes namespace' => sub {
-        my $self = THE_CLASS->_get_fresh_instance;
+        my $self = THE_CLASS->_MarpaX_Grammar_Preprocessor_get_fresh_instance;
 
         my $namespace = $self->$__namespace__;
         is $namespace, undef, 'the namespace is undef';
@@ -69,21 +69,21 @@ describe _get_fresh_instance => sub {
     it 'initializes the source ref' => sub {
         my $dummy;
 
-        my $self = THE_CLASS->_get_fresh_instance(\$dummy);
+        my $self = THE_CLASS->_MarpaX_Grammar_Preprocessor_get_fresh_instance(\$dummy);
 
         my $source_ref = $self->$__source_ref__;
         is $source_ref, \$dummy, 'sets the source ref';
     };
 
     it 'initializes the docs' => sub {
-        my $self = THE_CLASS->_get_fresh_instance;
+        my $self = THE_CLASS->_MarpaX_Grammar_Preprocessor_get_fresh_instance;
 
         my $docs = $self->$__docs__;
         is_deeply $docs, {}, 'initialized docs to empty hash';
     };
 
     it 'loads a prelude into the buffer' => sub {
-        my $self = THE_CLASS->_get_fresh_instance;
+        my $self = THE_CLASS->_MarpaX_Grammar_Preprocessor_get_fresh_instance;
 
         my $buffers = $self->$__buffers__;
         my $expected = $self->SLIF_PRELUDE;
@@ -93,7 +93,7 @@ describe _get_fresh_instance => sub {
 
 package Local::MockNextToken {
     use Moo;
-    extends 'MarpaX::R2::GrammarPreprocessor';
+    extends 'MarpaX::Grammar::Preprocessor';
 
     has mock_tokens => (
         is => 'ro',
@@ -105,7 +105,7 @@ package Local::MockNextToken {
     }
 }
 
-describe _pump => sub {
+describe _MarpaX_Grammar_Preprocessor_pump => sub {
     my @tokens = (
         [undef, 'a'],
         [undef, 'b'],
@@ -114,7 +114,7 @@ describe _pump => sub {
     );
     my $self = Local::MockNextToken->new(mock_tokens => \@tokens);
 
-    $self->_pump;
+    $self->_MarpaX_Grammar_Preprocessor_pump;
 
     my $expected = $self->SLIF_PRELUDE . 'abc' . '; ';
     is $self->slif_source, $expected, 'the tokens were passed through';
@@ -123,12 +123,12 @@ describe _pump => sub {
 
 package Local::PreprocessMock {
     use Moo;
-    extends 'MarpaX::R2::GrammarPreprocessor';
+    extends 'MarpaX::Grammar::Preprocessor';
 
     use constant EXPECTED_SOURCE => 'the source';
     our $WAS_CALLED = 0;
 
-    sub _pump {
+    sub _MarpaX_Grammar_Preprocessor_pump {
         my ($self) = @_;
         $WAS_CALLED = 1;
         my $source_ref = $self->$__source_ref__;
@@ -141,7 +141,7 @@ describe preprocess => sub {
         local $Local::PreprocessMock::WAS_CALLED = 0;
         my $self = Local::PreprocessMock->preprocess(Local::PreprocessMock::EXPECTED_SOURCE);
         is _::blessed $self, 'Local::PreprocessMock', 'got the object back';
-        ok $Local::PreprocessMock::WAS_CALLED, '_pump was called',
+        ok $Local::PreprocessMock::WAS_CALLED, '_MarpaX_Grammar_Preprocessor_pump was called',
     };
 
     it 'can take file handles' => sub {
@@ -151,13 +151,13 @@ describe preprocess => sub {
             or die "Could not open PerlIO file handle: $!";
         my $self = Local::PreprocessMock->preprocess($fh);
         is _::blessed $self, 'Local::PreprocessMock', 'got the object back';
-        ok $Local::PreprocessMock::WAS_CALLED, '_pump was called',
+        ok $Local::PreprocessMock::WAS_CALLED, '_MarpaX_Grammar_Preprocessor_pump was called',
     };
 };
 
 describe buffer_push => sub {
     it 'initializes the next buffer' => sub {
-        my $self = THE_CLASS->_get_fresh_instance;
+        my $self = THE_CLASS->_MarpaX_Grammar_Preprocessor_get_fresh_instance;
         my $buffers = _set_buffers($self, 'a', 'b');
 
         $self->buffer_push('some initialization');
@@ -166,7 +166,7 @@ describe buffer_push => sub {
     };
 
     it 'defaults to a semicolon' => sub {
-        my $self = THE_CLASS->_get_fresh_instance;
+        my $self = THE_CLASS->_MarpaX_Grammar_Preprocessor_get_fresh_instance;
         my $buffers = _set_buffers($self, 'a', 'b');
 
         $self->buffer_push;
@@ -177,7 +177,7 @@ describe buffer_push => sub {
 
 describe buffer_join => sub {
     it 'collapses the last two buffers' => sub {
-        my $self = THE_CLASS->_get_fresh_instance;
+        my $self = THE_CLASS->_MarpaX_Grammar_Preprocessor_get_fresh_instance;
         my $buffers = _set_buffers($self, 'a', 'b', 'c');
 
         $self->buffer_join;
@@ -188,18 +188,26 @@ describe buffer_join => sub {
 
 describe buffer_write => sub {
     it 'appends data to the second-to-last buffer' => sub {
-        my $self = THE_CLASS->_get_fresh_instance;
+        my $self = THE_CLASS->_MarpaX_Grammar_Preprocessor_get_fresh_instance;
         my $buffers = _set_buffers($self, 'a', 'b', 'c', 'd');
 
         $self->buffer_write('some data');
 
         is_deeply $buffers, ['a', 'b', 'csome data', 'd'], 'data has been appended';
     };
+
+    it 'throws if no buffer is available' => sub {
+        my $self = THE_CLASS->_MarpaX_Grammar_Preprocessor_get_fresh_instance;
+        my $buffers = _set_buffers($self, 'a');
+
+        throws_ok { $self->buffer_write("something") }
+            qr/\A\QNo currently selected buffer\E\b/;
+    };
 };
 
 describe slif_source => sub {
     it 'returns the single remaining buffer' => sub {
-        my $self = THE_CLASS->_get_fresh_instance;
+        my $self = THE_CLASS->_MarpaX_Grammar_Preprocessor_get_fresh_instance;
         my $buffers = _set_buffers($self, 'the contents');
 
         my $slif_source = $self->slif_source;
@@ -208,7 +216,7 @@ describe slif_source => sub {
     };
 
     it 'throws if more than a single buffer is left' => sub {
-        my $self = THE_CLASS->_get_fresh_instance;
+        my $self = THE_CLASS->_MarpaX_Grammar_Preprocessor_get_fresh_instance;
         my $buffers = _set_buffers($self, 'a', 'b');
 
         throws_ok { $self->slif_source } qr/\AInline rules were not closed\b/, 'throws an error because there were two buffers';
@@ -217,7 +225,7 @@ describe slif_source => sub {
 
 describe docs => sub {
     it 'returns the documentation hash' => sub {
-        my $self = THE_CLASS->_get_fresh_instance;
+        my $self = THE_CLASS->_MarpaX_Grammar_Preprocessor_get_fresh_instance;
         my $expected = $self->$__docs__;
 
         my $docs = $self->docs;
@@ -277,7 +285,7 @@ describe next_token => sub {
     it 'returns empty when at end of input' => sub {
         case 'empty string' => sub {
             my $input = '';
-            my $self = THE_CLASS->_get_fresh_instance(\$input);
+            my $self = THE_CLASS->_MarpaX_Grammar_Preprocessor_get_fresh_instance(\$input);
             pos($input) = 0;
 
             my @result = $self->next_token;
@@ -287,7 +295,7 @@ describe next_token => sub {
 
         case 'end of string' => sub {
             my $input = 'foo bar';
-            my $self = THE_CLASS->_get_fresh_instance(\$input);
+            my $self = THE_CLASS->_MarpaX_Grammar_Preprocessor_get_fresh_instance(\$input);
             pos($input) = length($input);
 
             my @result = $self->next_token;
@@ -301,7 +309,7 @@ describe next_token => sub {
 
         case 'before end of string' => sub {
             my $input = $WHITESPACE;
-            my $self = THE_CLASS->_get_fresh_instance(\$input);
+            my $self = THE_CLASS->_MarpaX_Grammar_Preprocessor_get_fresh_instance(\$input);
             pos($input) = 0;
             my $buffers = _set_buffers($self, 'a', 'b');
 
@@ -313,7 +321,7 @@ describe next_token => sub {
 
         case 'before IDENT' => sub {
             my $input = $WHITESPACE . 'name';
-            my $self = THE_CLASS->_get_fresh_instance(\$input);
+            my $self = THE_CLASS->_MarpaX_Grammar_Preprocessor_get_fresh_instance(\$input);
             pos($input) = 0;
             my $buffers = _set_buffers($self, 'a', 'b');
 
@@ -329,7 +337,7 @@ describe next_token => sub {
 
         case 'before end of string' => sub {
             my $input = $COMMENT;
-            my $self = THE_CLASS->_get_fresh_instance(\$input);
+            my $self = THE_CLASS->_MarpaX_Grammar_Preprocessor_get_fresh_instance(\$input);
             pos($input) = 0;
             my $buffers = _set_buffers($self, 'a', 'b');
 
@@ -341,7 +349,7 @@ describe next_token => sub {
 
         case 'before IDENT' => sub {
             my $input = " $COMMENT\n name";
-            my $self = THE_CLASS->_get_fresh_instance(\$input);
+            my $self = THE_CLASS->_MarpaX_Grammar_Preprocessor_get_fresh_instance(\$input);
             pos($input) = 0;
             my $buffers = _set_buffers($self, 'a', 'b');
 
@@ -354,7 +362,7 @@ describe next_token => sub {
 
     it 'returns simple identifiers' => sub {
         my $input = '****foo_bar****';
-        my $self = THE_CLASS->_get_fresh_instance(\$input);
+        my $self = THE_CLASS->_MarpaX_Grammar_Preprocessor_get_fresh_instance(\$input);
         pos($input) = 4;
         my $buffers = _set_buffers($self, 'a', 'b');
 
@@ -367,7 +375,7 @@ describe next_token => sub {
 
     it 'returns namespaced identifiers' => sub {
         my $input = '****%Foo****';
-        my $self = THE_CLASS->_get_fresh_instance(\$input);
+        my $self = THE_CLASS->_MarpaX_Grammar_Preprocessor_get_fresh_instance(\$input);
         pos($input) = 4;
         my $buffers = _set_buffers($self, 'a', 'b');
         $self->$__namespace__('TheNamespace');
@@ -381,7 +389,7 @@ describe next_token => sub {
 
     it 'returns namespace references' => sub {
         my $input = '****%****';
-        my $self = THE_CLASS->_get_fresh_instance(\$input);
+        my $self = THE_CLASS->_MarpaX_Grammar_Preprocessor_get_fresh_instance(\$input);
         pos($input) = 4;
         my $buffers = _set_buffers($self, 'a', 'b');
         $self->$__namespace__('TheNamespace');
@@ -395,7 +403,7 @@ describe next_token => sub {
 
     it 'dies if no namespace was set' => sub {
         my $input = '****%****';
-        my $self = THE_CLASS->_get_fresh_instance(\$input);
+        my $self = THE_CLASS->_MarpaX_Grammar_Preprocessor_get_fresh_instance(\$input);
         pos($input) = 4;
 
         throws_ok { $self->next_token }
@@ -405,7 +413,7 @@ describe next_token => sub {
     it 'returns literal strings' => sub {
         # actually ****'foo\\bar\'****
         my $input = q(****'foo\\\\bar\\'****);
-        my $self = THE_CLASS->_get_fresh_instance(\$input);
+        my $self = THE_CLASS->_MarpaX_Grammar_Preprocessor_get_fresh_instance(\$input);
         pos($input) = 4;
         my $buffers = _set_buffers($self, 'a', 'b');
 
@@ -419,7 +427,7 @@ describe next_token => sub {
     it 'returns literal strings with case insensitive modifier' => sub {
         # actually ****'foo\\bar\':i****
         my $input = q(****'foo\\\\bar\\':i****);
-        my $self = THE_CLASS->_get_fresh_instance(\$input);
+        my $self = THE_CLASS->_MarpaX_Grammar_Preprocessor_get_fresh_instance(\$input);
         pos($input) = 4;
         my $buffers = _set_buffers($self, 'a', 'b');
 
@@ -433,7 +441,7 @@ describe next_token => sub {
     it 'returns character classes' => sub {
         # actually ****[^\w\\a-z\-\]\[{]]****
         my $input = q(****[^\\w\\\\a-z\\-\\]\\[{]****);
-        my $self = THE_CLASS->_get_fresh_instance(\$input);
+        my $self = THE_CLASS->_MarpaX_Grammar_Preprocessor_get_fresh_instance(\$input);
         pos($input) = 4;
         my $buffers = _set_buffers($self, 'a', 'b');
 
@@ -447,7 +455,7 @@ describe next_token => sub {
     it 'delegates to commands' => sub {
         package Local::MockTestCommand {
             use Moo;
-            extends 'MarpaX::R2::GrammarPreprocessor';
+            extends 'MarpaX::Grammar::Preprocessor';
 
             sub command_test {
                 /\G \s* (foo)\b/xgc
@@ -458,7 +466,7 @@ describe next_token => sub {
 
         # actually ****\test foo****
         my $input = q(****\\test  foo****);
-        my $self = Local::MockTestCommand->_get_fresh_instance(\$input);
+        my $self = Local::MockTestCommand->_MarpaX_Grammar_Preprocessor_get_fresh_instance(\$input);
         pos($input) = 4;
         my $buffers = _set_buffers($self, 'a', 'b');
 
@@ -471,7 +479,7 @@ describe next_token => sub {
 
     it 'throws for unknown commands' => sub {
         my $input = q(****\\this_command_does_not_exist_I_hope****);
-        my $self = THE_CLASS->_get_fresh_instance(\$input);
+        my $self = THE_CLASS->_MarpaX_Grammar_Preprocessor_get_fresh_instance(\$input);
         pos($input) = 4;
 
         throws_ok { $self->next_token }
@@ -480,7 +488,7 @@ describe next_token => sub {
 
     it 'recurses into inline rules' => sub {
         my $input = q(****{ name bleh, parser don't care' }****);
-        my $self = THE_CLASS->_get_fresh_instance(\$input);
+        my $self = THE_CLASS->_MarpaX_Grammar_Preprocessor_get_fresh_instance(\$input);
         pos($input) = 4;
         my $buffers = _set_buffers($self, 'a', 'b');
 
@@ -493,7 +501,7 @@ describe next_token => sub {
 
     it 'returns close tokens' => sub {
         my $input = q(****}****);
-        my $self = THE_CLASS->_get_fresh_instance(\$input);
+        my $self = THE_CLASS->_MarpaX_Grammar_Preprocessor_get_fresh_instance(\$input);
         pos($input) = 4;
         my $buffers = _set_buffers($self, 'a', 'b');
 
@@ -506,7 +514,7 @@ describe next_token => sub {
 
     it 'returns anything else as operators' => sub {
         my $input = q(****::=|+*=>glorp****);
-        my $self = THE_CLASS->_get_fresh_instance(\$input);
+        my $self = THE_CLASS->_MarpaX_Grammar_Preprocessor_get_fresh_instance(\$input);
         pos($input) = 4;
         my $buffers = _set_buffers($self, 'a', 'b');
 
@@ -521,7 +529,7 @@ describe next_token => sub {
 describe command_array => sub {
     my $input = q(****++++);
     pos($input) = 4;
-    my $self = THE_CLASS->_get_fresh_instance;
+    my $self = THE_CLASS->_MarpaX_Grammar_Preprocessor_get_fresh_instance;
     my $buffers = _set_buffers($self, 'a', 'b');
 
     my @result = do {
@@ -537,7 +545,7 @@ describe command_array => sub {
 describe command_null => sub {
     my $input = q(****++++);
     pos($input) = 4;
-    my $self = THE_CLASS->_get_fresh_instance;
+    my $self = THE_CLASS->_MarpaX_Grammar_Preprocessor_get_fresh_instance;
     my $buffers = _set_buffers($self, 'a', 'b');
 
     my @result = do {
@@ -553,7 +561,7 @@ describe command_null => sub {
 describe command_group => sub {
     my $input = q(****++++);
     pos($input) = 4;
-    my $self = THE_CLASS->_get_fresh_instance;
+    my $self = THE_CLASS->_MarpaX_Grammar_Preprocessor_get_fresh_instance;
     my $buffers = _set_buffers($self, 'a', 'b');
 
     my @result = do {
@@ -569,7 +577,7 @@ describe command_group => sub {
 describe command_left => sub {
     my $input = q(****++++);
     pos($input) = 4;
-    my $self = THE_CLASS->_get_fresh_instance;
+    my $self = THE_CLASS->_MarpaX_Grammar_Preprocessor_get_fresh_instance;
     my $buffers = _set_buffers($self, 'a', 'b');
 
     my @result = do {
@@ -585,7 +593,7 @@ describe command_left => sub {
 describe command_right => sub {
     my $input = q(****++++);
     pos($input) = 4;
-    my $self = THE_CLASS->_get_fresh_instance;
+    my $self = THE_CLASS->_MarpaX_Grammar_Preprocessor_get_fresh_instance;
     my $buffers = _set_buffers($self, 'a', 'b');
 
     my @result = do {
@@ -601,7 +609,7 @@ describe command_right => sub {
 describe command_lax => sub {
     my $input = q(****++++);
     pos($input) = 4;
-    my $self = THE_CLASS->_get_fresh_instance;
+    my $self = THE_CLASS->_MarpaX_Grammar_Preprocessor_get_fresh_instance;
     my $buffers = _set_buffers($self, 'a', 'b');
 
     my @result = do {
@@ -617,7 +625,7 @@ describe command_lax => sub {
 describe command_do => sub {
     my $input = q(**** FooBar++++);
     pos($input) = 4;
-    my $self = THE_CLASS->_get_fresh_instance;
+    my $self = THE_CLASS->_MarpaX_Grammar_Preprocessor_get_fresh_instance;
     my $buffers = _set_buffers($self, 'a', 'b');
 
     my @result = do {

@@ -33,7 +33,7 @@
 use strict;
 use warnings;
 
-use MarpaX::R2::GrammarPreprocessor;
+use MarpaX::Grammar::Preprocessor;
 use Marpa::R2;
 
 use Test::More;
@@ -41,7 +41,7 @@ use Test::Exception;
 
 use Util::Underscore;
 
-my $processed = MarpaX::R2::GrammarPreprocessor->preprocess(\*DATA);
+my $processed = MarpaX::Grammar::Preprocessor->preprocess(\*DATA);
 my $grammar = Marpa::R2::Scanless::G->new({ source => \$processed->slif_source });
 
 # enter script mode if any command line arguments were provided
