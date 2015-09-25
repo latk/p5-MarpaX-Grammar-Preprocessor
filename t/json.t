@@ -115,13 +115,14 @@ sub json_load {
     my $maybe_data = $recce->value(Actions->new);
 
     if (not $maybe_data) {
-        die "Parse failed";
+        die pinpoint_error($grammar, $recce, $processed->docs, $input, "Parse failed");
     }
 
     return $$maybe_data;
 }
 
-package Actions {
+BEGIN {
+    package Actions;
     use Moo;
 
     sub do_Object {
@@ -252,33 +253,9 @@ BEGIN {
             $heading = "$prefixed_name\n";
         }
         my $docs = $self->docs;
-        if (length $docs) {
-            if (@childs) {
-                $docs =~ s/^/│   /mg;
-            }
-            else {
-                $docs =~ s/^/    /mg;
-            }
-            $heading .= $docs;
-            $heading =~ s/\s*\z/\n/;
-        }
-
-        my $out = $heading;
-
-        while (my ($i, $rendering) = each @childs) {
-            $rendering =~ s/\s*\z//;
-            if ($i < $#childs) {
-                $rendering =~ s/\n\K/│ /g;
-                $rendering =~ s/\A/├╴/;
-            }
-            else {
-                $rendering =~ s/\n\K/  /g;
-                $rendering =~ s/\A/└╴/;
-            }
-            $out .= $rendering . "\n";
-        }
-
-        return $out;
+        $docs =~ s/^/  /mg;
+        s/\s*\z// for $docs, @childs;
+        return $heading . main::tree_join($docs, @childs) . "\n";
     }
 }
 
@@ -295,6 +272,13 @@ sub pinpoint_marpa_error {
     $problem =~ s/^error:\s*//i;
     $problem =~ s/\s*\z//;
 
+    return pinpoint_error($grammar, $recce, $grammar_documentation, $source, $problem, $err);
+}
+
+sub pinpoint_error {
+    my ($grammar, $recce, $grammar_documentation, $source, $problem, $orig_error) = @_;
+    $orig_error //= $problem;
+
     # Find the location of the error
     my $position = $recce->pos;
     my ($line, $col) = $recce->line_column($position);
@@ -303,7 +287,53 @@ sub pinpoint_marpa_error {
     my $line_start = $position - $col + 1;
     pos($source) = $line_start;
     my ($line_contents) = $source =~ /\G (.*)/x
-        or return $err, "\n(line could not be extracted)";
+        or return $orig_error, "\n(line could not be extracted)";
+
+    my $progress_report = progress_report($grammar, $recce, $grammar_documentation);
+
+    # get info about the last successfuly parsed thing
+    my $last_completed_report;
+    if (my ($g1_start, $g1_length) = $recce->last_completed('Value')) {
+        my @candidate_symbols;
+        my $g1_end = $g1_start + $g1_length;
+        my $STATUS_COMPLETION = -1;
+        for my $progress_item (@{ $recce->progress($g1_end) }) {
+            my ($rule_id, $status, $start) = @$progress_item;
+            next if $status != $STATUS_COMPLETION;
+            next if $start != $g1_start;  # get longest completions only
+
+            my ($lhs_id, @rhs_ids) = $grammar->rule_expand($rule_id);
+            my $symbol = $grammar->symbol_name($lhs_id);
+            next if $symbol eq 'Value';  # only interested in the specific kind of value
+
+            push @candidate_symbols, $symbol;
+        }
+
+        if (@candidate_symbols) {
+            my $span = $recce->substring($g1_start, $g1_length);
+            $span =~ s/\P{XPosixGraph}/ /g; # simplify input
+            $last_completed_report = sprintf "Last recognized value: %s: %s\n",
+                scalar oxford_comma_join('or', @candidate_symbols),
+                elide_middle($span, 10, "...", 10);
+        }
+    }
+
+    # Print nice error
+    my $line_pointer = (q[ ] x ($col - 1)) . '^';
+    my $offending_char_description = ($position < length $source)
+        ? describe_char(substr($source, $position, 1))
+        : "EOF (end of input)";
+    return "Parser: $line:$col: error: $problem\n",
+        $line_contents, "\n",
+        $line_pointer, "\n",
+        "at " . $offending_char_description . "\n",
+        $last_completed_report // '',
+        "Expected one of the following:\n",
+        $progress_report;
+}
+
+sub progress_report {
+    my ($grammar, $recce, $grammar_documentation) = @_;
 
     my $doclet_root = Local::Doclet->new(name => '<<ROOT>>',
                                          fullname => undef,
@@ -312,8 +342,7 @@ sub pinpoint_marpa_error {
         my ($fullname, $rhs) = @_;
 
         # skip if symbol is hidden
-        return if exists $grammar_documentation->{$fullname}
-            and not defined $grammar_documentation->{$fullname};
+        return if is_hidden_documentation($grammar_documentation, $fullname);
 
         $doclet_root->insert($rhs, split /.\K__/, $fullname);
         return;
@@ -322,17 +351,19 @@ sub pinpoint_marpa_error {
     # Get expected lexemes
     $doclet_insert->($_, undef) for @{ $recce->terminals_expected };
 
-    my %raw_progress; # { $lhs_id => { $location => [\@rhs] }, ... }
-    for my $progress_spec (@{ $recce->progress }) {
+    # \%raw_progress : { $lhs_id => { $location => [\@rhs] }, ... }
+    my %raw_progress;
+    for my $progress_spec (@{ $recce->progress() }) {
         my ($id, $location, $start) = @$progress_spec;
         my ($lhs_id, @rhs_ids) = $grammar->rule_expand($id);
 
-        # ignore all rules with this LHS,
-        my $docsymbol = $grammar->symbol_name($lhs_id);
-        next if exists $grammar_documentation->{$docsymbol}
-            and not defined $grammar_documentation->{$docsymbol};
-
         push @{ $raw_progress{$lhs_id}{$location} }, \@rhs_ids;
+    }
+
+    # delete those LHSes that are hidden from the doc system
+    for my $lhs_id (keys %raw_progress) {
+        delete $raw_progress{$lhs_id}
+            if is_hidden_documentation($grammar_documentation, $grammar->symbol_name($lhs_id));
     }
 
     # iterate over the raw progress, alphabetically sorted by LHS name
@@ -359,24 +390,129 @@ sub pinpoint_marpa_error {
     my $progress_report = join '', $doclet_root->render_childs;
     $progress_report = "  none\n" if not length $progress_report;
 
-    # Print nice error
-    my $line_pointer = (q[ ] x ($col - 1)) . '^';
+    return $progress_report;
+}
+
+#!! elide_middle($string: Str, $prefix: Size, $ellipsis: Str, $suffix: Size) -> Str
+#!!
+#!! Removes the middle bit of long strings.
+#!!
+#!! Example:
+#!!
+#!!     elide_middle("123foobarbaz", 3, "...", 3) #=> "123...baz"
+sub elide_middle {
+    my ($str, $prefix_size, $ellipsis, $suffix_size) = @_;
+    # delete $prefix and $suffix, so $middle is left
+    my $middle = $str;
+    my $prefix = substr($middle, 0, $prefix_size, '');
+    my $suffix = substr($middle, -$suffix_size, $suffix_size, '');
+    # only remove the middle if it shortens the string
+    if (length $middle > length $ellipsis) {
+        return $prefix . $ellipsis . $suffix;
+    }
+    else {
+        return $str;
+    }
+}
+
+#!! oxford_comma_join($conjunction: Str, ...@words: Str) -> Str
+#!!
+#!! join words with commata, according to the rules of the English language.
+#!!
+#!! Example:
+#!!
+#!!     oxford_comma_join('and', qw(a)) #=> "a"
+#!!     oxford_comma_join('and', qw(a b)) #=> "a and b"
+#!!     oxford_comma_join('and', qw(a b c)) #=> "a, b, and c"
+sub oxford_comma_join {
+    my ($conjunction, @words) = @_;
+    return if not @words;
+    return $words[0] if @words == 1;
+    return "$words[0] $conjunction $words[1]" if @words == 2;
+    my $last_word = pop @words;
+    return (join ', ', @words) . ", $conjunction $last_word";
+}
+
+#!! describe_char($char: Char) -> String
+#!!
+#!! Example:
+#!!
+#!!     describe_char("a") #=> "character 'a' U+0061 LATIN SMALL LETTER A"
+sub describe_char {
+    my ($char) = @_;
     require charnames;
-    my $offending_char = substr($source, $position, 1);
-    my $offending_char_description = ($offending_char =~ /\A\p{XPosixGraph}\z/) ? "character '$offending_char'" : 'unprintable character';
-    $offending_char_description .= sprintf ' U+%04X %s', ord $offending_char, charnames::viacode(ord $offending_char);
-    return "Parser: $line:$col: error: $problem\n",
-        $line_contents, "\n",
-        $line_pointer, "\n",
-        "at " . $offending_char_description . "\n",
-        "we are trying to parse one of the following:\n",
-        $progress_report;
+
+    my $display_form = ($char =~ /\A\p{XPosixGraph}\z/) ? "character '$char'" : "unprintable character";
+    my $codepoint = ord $char;
+    my $name = sprintf 'U+%04X %s', $codepoint, charnames::viacode($codepoint);
+    return "$display_form $name";
+}
+
+#!! is_hidden_documentation($docs: Docs,
+#!!                         $symbol: SymbolName,
+#!!                         ) -> Bool
+#!! check if symbol was explicitly hidden
+#!!
+#!! @param $docs: Docs
+#!! the preprocessed docs, where Docs = Hash[SymbolName, String?].
+#!!
+#!! @param $symbol: SymbolName
+#!! the symbol to check for
+#!!
+#!! @returns Bool
+#!! true when the symbol is known to the doc system and was explicitly hidden.
+sub is_hidden_documentation {
+    my ($grammar_documentation, $symbol) = @_;
+    return (exists $grammar_documentation->{$symbol}
+        and not defined $grammar_documentation->{$symbol});
+}
+
+#!! tree_join($cont: Str?, ...@childs: Str) -> Str
+#!!
+#!! create a pretty line art tree from the items
+#!!
+#!! Example:
+#!!
+#!!     tree_join("...cont", "foo", "bar\nbaz", "qux")
+#!!
+#!! produces:
+#!!
+#!!     │ ...cont
+#!!     ├╴foo
+#!!     ├╴bar
+#!!     │ baz
+#!!     └╴qux
+#!!
+#!! but
+#!!
+#!!     tree_join("...cont") #=> "  ...cont"
+sub tree_join {
+    my ($cont, @childs) = @_;
+
+    @childs ? s/^/│ /mg : s/^/  /mg for $cont // ();
+
+    if (@childs) {
+        my $last_child = pop @childs;
+        s/\A/├╴/, s/\n\K/├╴/g for @childs;
+        s/\A/└╴/, s/\n\K/  /g for $last_child;
+        push @childs, $last_child;
+    }
+
+    return join "\n", $cont // (), @childs;
 }
 
 __DATA__
-\namespace
-    """ a JSON document, can either be an Object or an Array
-    Json ::= (_) { \doc hide %TopLevelItem ::= Object | Array } (_)
+# Naming convention:
+# CamelCase – G1 LHS symbols
+# ALL_UPPERCASE – G1 terminals / L0 top level symbols
+# all_lowercase – L0 symbols
+
+""" a JSON document, can either be an Object or an Array
+\namespace Json
+    ::= (_) %TopLevelItem (_)
+
+    """ the top level of a JSON document must be an Object or Array
+    %TopLevelItem ::= Object | Array
 
     """ any value
     Value ::= Object | Array | String | Number | Boolean | Null
@@ -384,17 +520,21 @@ __DATA__
     \doc hide
     unicorn ~ [^\s\S] # can never be lexed
 
-\namespace
-    """ optional white space
-    _ ::= %Item* \null
+""" optional white space
+\namespace _
+    ::= \doc hide \optional %Whitespace \null
+
+    \doc hide
+    %Whitespace ::= %Item+ \null
+
     \doc hide
     %Item
         ::= { \doc hide %WS ~ [\s]+ } \null
         |   ErrorComment \null
 
-\namespace
-    \doc hide
-    ErrorComment ::= %COMMENT_INTRO %ERROR
+\doc hide
+\namespace ErrorComment
+    ::= %COMMENT_INTRO %ERROR
 
     \doc hide
     %COMMENT_INTRO ~ '//' | '/*' | '#'
@@ -402,23 +542,21 @@ __DATA__
     """ ERROR: JSON does not support comments!
     %ERROR ~ unicorn
 
-\namespace
-    """ either "true" or "false"
-    Boolean
-        ::= {   """ a "true" boolean
-                %true ~ 'true' } \do True
-        |   {   """ a "false" boolean
-                %false ~ 'false' } \do False
+""" either "true" or "false"
+\namespace Boolean
+    ::= {   \doc hide %true ~ 'true' } \do True
+    |   {   \doc hide %false ~ 'false' } \do False
 
-\namespace
-    """ "null", the absence of values
-    Null
-        ::= {   """ "null", the absence of values
-                %keyword ~ 'null' } \null
+""" "null", the absence of values
+\namespace Null
+    ::= {   \doc hide %keyword ~ 'null' } \null
 
-\namespace
-    """ a key-value collection
-    Object ::= (%open _) { \doc hide %Contents ::= %KeyValuePair* \sep Sep \array } (_ %close) \do Object
+""" a key-value collection
+\namespace Object
+    ::= (%open _) %Contents (_ %close) \do Object
+
+    """ zero or more %KeyValuePairs separated by Comma
+    %Contents ::= %KeyValuePair* \sep Comma \array
 
     """ a key-value pair
     %KeyValuePair ::= String (_ %colon _) Value \array
@@ -432,9 +570,12 @@ __DATA__
     """ ":" separates keys from values
     %colon ~ ':'
 
-\namespace
-    """ a sequential collection
-    Array ::= (%open _) { \doc hide %Contents ::= Value* \sep Sep \array } (_ %close)
+""" a sequential collection
+\namespace Array
+    ::= (%open _) %Contents (_ %close)
+
+    """ zero or more Values separated by Comma
+    %Contents ::= Value* \sep Comma \array
 
     """ "[" begins an array
     %open ~ '['
@@ -442,16 +583,16 @@ __DATA__
     """ "]" ends an array
     %close ~ ']'
 
-\namespace
-    """ separates items in an object or list
-    Sep ::= (_  %comma  _) \null
+""" "," separates items in an Object or Array
+\namespace Comma
+    ::= (_  %comma  _) \null
 
-    """ separates items in an object or list
+    \doc hide
     %comma ~ ','
 
-\namespace
-    """ quoted text with various allowed escapes
-    String ::= (%quote) { \doc hide %Contents ::= %Item* \array } (%quote) \do String
+""" quoted text with various allowed escapes
+\namespace String
+    ::= (%quote) { \doc hide %Contents ::= %Item* \array } (%quote) \do String
 
     """ '"' begins and ends a string
     %quote ~ '"'
@@ -487,16 +628,15 @@ __DATA__
     \doc hide
     %xdigit ~ [\p{PosixXDigit}]
 
-\namespace
-    """ integer or real number
-    Number
-        ::= \doc hide
-            \optional { """ "-" starts a negative number
-                        %minus ~ '-'}
-            %LEADING_DIGITS
-            \doc hide \optional %FractionalPart
-            \doc hide \optional %Exponent
-            \do Number
+""" integer or real number
+\namespace Number
+    ::= \doc hide
+        \optional { """ "-" starts a negative number
+                    %minus ~ '-'}
+        %LEADING_DIGITS
+        \doc hide \optional %FractionalPart
+        \doc hide \optional %Exponent
+        \do Number
 
     """ The fractional part of a number, e.g. ".0230"
     %FractionalPart

@@ -61,31 +61,32 @@ use version 0.77; our $VERSION = qv('v0.0_1');
     #   lexeme default = latm => 1
 
     # A namespace allows us to gensym names for %helper rules
-    \namespace Foo ::= %BAR | %Baz
-    %BAR ~ 'bar'        # really Foo__BAR
-    %Baz ::= %BAR %BAR  # really Foo__Baz
+    \namespace Foo
+        ::= %BAR | %Baz
+        %BAR ~ 'bar'        # really Foo__BAR
+        %Baz ::= %BAR %BAR  # really Foo__Baz
 
     # The next namespace is totally unrelated.
-    \namespace
-    Qux ::= %BAR
-    %BAR ~ 'quxbar'     # really Qux__BAR
+    \namespace Qux
+        ::= %BAR
+        %BAR ~ 'quxbar'     # really Qux__BAR
 
     # Associate a docstring with the next symbol.
     # Docstrings can span multiple lines, all beginning with a triple quote.
-    \namespace
     """ a list of values. Examples:
     """     []          (empty list)
     """     [1, 2, 3]   (list with three integers)
-    List ::= (LEFT_BRACKET) %Items (RIGHT_BRACKET)
-    %Items ::= Value* \sep COMMA  # \sep expands to "separator => "
+    \namespace List
+        ::= (LEFT_BRACKET) %Items (RIGHT_BRACKET)
+        %Items ::= Value* \sep COMMA  # \sep expands to "separator => "
 
     # Use { curly braces } to specify an inline rule.
     # Inline rules still need a name.
     # \array expands to "action => ::array"
-    \namespace
     """ a key-value dictionary
-    Dict ::= (LEFT_BRACE) { %Items ::= %KVItem* \sep COMMA \array } (RIGHT_BRACE)
-    %KVItem ::= Key (COLON) Value \array
+    \namespace Dict
+        ::= (LEFT_BRACE) { %Items ::= %KVItem* \sep COMMA \array } (RIGHT_BRACE)
+        %KVItem ::= Key (COLON) Value \array
 
     # Suppress documentation for any symbol.
     # Great for internal helper rules!
@@ -137,9 +138,10 @@ This makes it easy to have quasi-private names without too much typing.
 
 Example:
 
-    \namespace
-    Term ::= % (%PLUS) Factor
-    %PLUS ~ '+'
+    \namespace Term
+        ::= % (%PLUS) Factor
+
+        %PLUS ~ '+'
 
 Is transformed to:
 
@@ -162,8 +164,8 @@ and defer the definition of the rule until a safe state is reached.
 
 Example:
 
-    \namespace
-    List ::= ('[') { %Items ::= Value* \sep COMMA \array } (']')
+    \namespace List
+        ::= ('[') { %Items ::= Value* \sep COMMA \array } (']')
 
 Is transformed to:
 
@@ -1119,14 +1121,13 @@ B<Expands to> the C<IDENT> token,
 
 B<Example:>
 
-    \namespace
-    Expression
-    ::= % ('+') % \do Addition
-    ||  ...
+    \namespace Expression
+        ::= % ('+') % \do Addition
+        ||  ...
 
-    \namespace
-    List ::= ('[') %Items (']')
-    %Items ::= Item* \sep COMMA
+    \namespace List
+        ::= ('[') %Items (']')
+        %Items ::= Item* \sep COMMA
 
 =cut
 
