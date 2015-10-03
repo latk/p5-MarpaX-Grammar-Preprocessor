@@ -56,7 +56,7 @@ use Test::Exception;
 
 use Util::Underscore;
 
-my $processed = MarpaX::Grammar::Preprocessor->preprocess(\*DATA);
+my $processed = MarpaX::Grammar::Preprocessor->new->preprocess(\*DATA);
 my $grammar = Marpa::R2::Scanless::G->new({ source => \$processed->slif_source });
 
 # enter script mode if any command line arguments were provided
