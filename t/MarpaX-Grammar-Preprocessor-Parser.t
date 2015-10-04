@@ -124,7 +124,7 @@ sub parser_fixture {
 describe result => sub {
     it 'returns a Result instance' => parser_fixture
         source_ref => undef,
-        buffers => ['foo'],
+        buffers => ['foo', ''],
         test => sub {
             my ($parser) = @_;
 
@@ -133,32 +133,21 @@ describe result => sub {
             is _::class $result, 'MarpaX::Grammar::Preprocessor::Result', 'result is an object';
         };
 
-    it 'contains the single remaining buffer' => parser_fixture
+    it 'contains the buffer contents' => parser_fixture
         source_ref => undef,
-        buffers => ['the contents'],
+        buffers => ['the contents', ''],
         test => sub {
             my ($parser) = @_;
 
             my $result = $parser->result;
 
-            is $result->slif_source, 'the contents', 'got the last buffer';
-        };
-
-    it 'throws if more than one buffer is left' => parser_fixture
-        source_ref => undef,
-        buffers => ['a', 'b'],
-        test => sub {
-            my ($parser) = @_;
-
-            throws_ok { $parser->result }
-                qr/\AInline rules were not closed\b/,
-                'throws an error because there were two buffers';
+            is $result->slif_source, 'the contents', 'got the buffer contents';
         };
 
     my $expected_docs = {};
     it 'returns the documentation hash' => parser_fixture
         source_ref => undef,
-        buffers => ['foo'],
+        buffers => ['foo', ''],
         ctor_args => {
             _MarpaX_Grammar_Preprocessor_Parser_docs => $expected_docs,
         },
@@ -171,65 +160,141 @@ describe result => sub {
         };
 };
 
-describe buffer_push => sub {
-    it 'initializes the next buffer' => parser_fixture
+describe new_with => sub {
+    it 'creates a shallow copy of the object' => sub {
+        my $source = 'foo';
+        my $orig = THE_CLASS->new(
+            source_ref => \$source,
+            buffers => [undef, undef],
+        );
+
+        my $copy = $orig->new_with();
+
+        is  $copy->_MarpaX_Grammar_Preprocessor_Parser_source_ref,
+            $orig->_MarpaX_Grammar_Preprocessor_Parser_source_ref,
+            'copy has same source reference';
+        is  $copy->_MarpaX_Grammar_Preprocessor_Parser_namespace,
+            $orig->_MarpaX_Grammar_Preprocessor_Parser_namespace,
+            'copy has same namespace';
+        is  $copy->_MarpaX_Grammar_Preprocessor_Parser_namespace_separator,
+            $orig->_MarpaX_Grammar_Preprocessor_Parser_namespace_separator,
+            'copy has same namespace_separator';
+        is  $copy->_MarpaX_Grammar_Preprocessor_Parser_docs,
+            $orig->_MarpaX_Grammar_Preprocessor_Parser_docs,
+            'copy has same docs';
+        is  $copy->_MarpaX_Grammar_Preprocessor_Parser_optional_rule_cache,
+            $orig->_MarpaX_Grammar_Preprocessor_Parser_optional_rule_cache,
+            'copy has same optional_rule_cache';
+    };
+
+    it 'can override arguments' => sub {
+        _::const my $source => 'foo';
+        _::const my $orig => THE_CLASS->new(
+            source_ref => \$source,
+            buffers => [undef, undef],
+        );
+        _::const my $new_namespace => 'new namespace';
+        _::const my $new_namespace_separator => '::';
+
+        my $copy = $orig->new_with(
+            _MarpaX_Grammar_Preprocessor_Parser_namespace => $new_namespace,
+            namespace_separator => $new_namespace_separator,
+        );
+
+        is  $copy->_MarpaX_Grammar_Preprocessor_Parser_source_ref,
+            $orig->_MarpaX_Grammar_Preprocessor_Parser_source_ref,
+            'copy has same source reference';
+        is  $copy->_MarpaX_Grammar_Preprocessor_Parser_namespace,
+            $new_namespace,
+            'copy has new namespace';
+        is  $copy->_MarpaX_Grammar_Preprocessor_Parser_namespace_separator,
+            $new_namespace_separator,
+            'copy has new namespace_separator';
+        is  $copy->_MarpaX_Grammar_Preprocessor_Parser_docs,
+            $orig->_MarpaX_Grammar_Preprocessor_Parser_docs,
+            'copy has same docs';
+        is  $copy->_MarpaX_Grammar_Preprocessor_Parser_optional_rule_cache,
+            $orig->_MarpaX_Grammar_Preprocessor_Parser_optional_rule_cache,
+            'copy has same optional_rule_cache';
+    };
+
+    it 'works correctly with subclasses' => sub {
+        BEGIN {
+            package Local::ParserSubclassForNewWith;
+            use Moo;
+            extends 'MarpaX::Grammar::Preprocessor::Parser';
+            use namespace::clean;
+
+            has _custom_state => (is => 'ro', required => 1);
+
+            around new_with => sub {
+                my ($orig, $self, %args) = @_;
+                return $orig->(
+                    $self,
+                    _custom_state => $self->_custom_state,
+                    %args,
+                );
+            };
+        }
+
+        my $orig = Local::ParserSubclassForNewWith->new(
+            _custom_state => 42,
+            source_ref => undef,
+            buffers => [undef, undef],
+        );
+
+        my $copy = $orig->new_with(source_ref => \"foo");
+
+        ok +(_::is_instance $copy, 'Local::ParserSubclassForNewWith'),
+            'got correct class'
+            or diag sprintf "got %s instance but expected %s",
+                (_::class $copy) // "<undef>",
+                'Local::ParserSubclassForNewWith';
+        is_deeply $copy->_MarpaX_Grammar_Preprocessor_Parser_source_ref,
+            \'foo',
+            'got overridden source_ref value';
+        is  $copy->_MarpaX_Grammar_Preprocessor_Parser_namespace,
+            $orig->_MarpaX_Grammar_Preprocessor_Parser_namespace,
+            'copy has same namespace';
+        is  $copy->_MarpaX_Grammar_Preprocessor_Parser_namespace_separator,
+            $orig->_MarpaX_Grammar_Preprocessor_Parser_namespace_separator,
+            'copy has same namespace_separator';
+        is  $copy->_MarpaX_Grammar_Preprocessor_Parser_docs,
+            $orig->_MarpaX_Grammar_Preprocessor_Parser_docs,
+            'copy has same docs';
+        is  $copy->_MarpaX_Grammar_Preprocessor_Parser_optional_rule_cache,
+            $orig->_MarpaX_Grammar_Preprocessor_Parser_optional_rule_cache,
+            'copy has same optional_rule_cache';
+        is  $copy->_custom_state,
+            $orig->_custom_state,
+            'copy has same _custom_state';
+    };
+};
+
+describe write => sub {
+    it 'appends data to the primary buffer' => parser_fixture
         source_ref => undef,
         buffers => ['a', 'b'],
-        buffers_expected => ['a', 'b', 'some initalization'],
-        buffers_message => 'a new buffer was appended',
+        buffers_expected => ['a12', 'b'],
+        buffers_message => 'the strings where appended to the main buffer',
         test => sub {
             my ($parser) = @_;
 
-            $parser->buffer_push('some initalization');
-        };
-
-    it 'defaults to a semicolon' => parser_fixture
-        source_ref => undef,
-        buffers => ['a', 'b'],
-        buffers_expected => ['a', 'b', '; '],
-        buffers_message => 'a new buffer was appended',
-        test => sub {
-            my ($parser) = @_;
-
-            $parser->buffer_push;
+            $parser->write('1', '2');
         };
 };
 
-describe buffer_join => sub {
-    it 'collapses the last two buffers' => parser_fixture
+describe write_deferred => sub {
+    it 'appends data to the deferred buffer' => parser_fixture
         source_ref => undef,
-        buffers => ['a', 'b', 'c'],
-        buffers_expected => ['a', 'bc'],
-        buffers_message => 'the last two buffers have been joined',
+        buffers => ['a', 'b'],
+        buffers_expected => ['a', 'b12'],
+        buffers_message => 'the strings where appended to the main buffer',
         test => sub {
             my ($parser) = @_;
 
-            $parser->buffer_join;
+            $parser->write_deferred('1', '2');
         };
-};
-
-describe buffer_write => sub {
-    it 'appends data to the second-to-last buffer' => sub {
-        my $buffers = ['a', 'b', 'c', 'd'];
-        my $parser = THE_CLASS->new(
-            source_ref => undef,
-            buffers => $buffers,
-        );
-
-        $parser->buffer_write('some data');
-
-        is_deeply $buffers, ['a', 'b', 'csome data', 'd'], 'data has been appended';
-    };
-
-    it 'throws if no buffer is available' => sub {
-        my $parser = THE_CLASS->new(
-            source_ref => undef,
-            buffers => ['a'],
-        );
-
-        throws_ok { $parser->buffer_write('something') }
-            qr/\A\QNo currently selected buffer\E\b/;
-    };
 };
 
 describe next_token => sub {
@@ -238,7 +303,7 @@ describe next_token => sub {
             input_before => '',
             input => '',
             input_after => '',
-            buffers => [],
+            buffers => [undef, undef],
             test => sub {
                 my ($parser) = @_;
 
@@ -250,7 +315,7 @@ describe next_token => sub {
         case 'end of string' => parser_fixture
             input => '',
             input_after => '',
-            buffers => [],
+            buffers => [undef, undef],
             test => sub {
                 my ($parser) = @_;
 
@@ -262,7 +327,7 @@ describe next_token => sub {
 
     it 'throws when no explicit pos() was defined' => parser_fixture
         source_ref => \"",
-        buffers => [],
+        buffers => [undef, undef],
         test => sub {
             my ($parser) = @_;
 
@@ -346,7 +411,7 @@ describe next_token => sub {
 
     it 'dies if no namespace was set' => parser_fixture
         input => '%',
-        buffers => [],
+        buffers => [undef, undef],
         test => sub {
             my ($parser) = @_;
 
@@ -531,14 +596,14 @@ describe pump => sub {
         ctor_args => {
             mock_tokens => [
                 [OP => 'a'],
-                [CLOSE => 'b'],
+                [LITERAL => 'b'],
                 [IDENT => 'c'],
                 undef, # to terminate the pump
                 sub { die "should never be called" },
             ],
         },
-        buffers => ['prelude:'],
-        buffers_expected => ['prelude:abc; '],
+        buffers => ['prelude:', undef],
+        buffers_expected => ['prelude:abc', undef],
         buffers_message => 'input was consumed',
         test => sub {
             my ($parser) = @_;
@@ -551,7 +616,7 @@ describe expect => sub {
         source_ref => undef,
         class => 'Local::Parser::MockNextToken',
         ctor_args => { mock_tokens => [[IDENT => 'the value']] },
-        buffers => [],
+        buffers => [undef, undef],
         test => sub {
             my ($parser) = @_;
 
@@ -564,7 +629,7 @@ describe expect => sub {
         source_ref => undef,
         class => 'Local::Parser::MockNextToken',
         ctor_args => { mock_tokens => [[IDENT => 'the value']] },
-        buffers => [],
+        buffers => [undef, undef],
         test => sub {
             my ($parser) = @_;
 
@@ -577,7 +642,7 @@ describe expect => sub {
         source_ref => undef,
         class => 'Local::Parser::MockNextToken',
         ctor_args => { mock_tokens => [[IDENT => 'the value']] },
-        buffers => [],
+        buffers => [undef, undef],
         test => sub {
             my ($parser) = @_;
 
@@ -589,7 +654,7 @@ describe expect => sub {
         source_ref => undef,
         class => 'Local::Parser::MockNextToken',
         ctor_args => { mock_tokens => [] },
-        buffers => [],
+        buffers => [undef, undef],
         test => sub {
             my ($parser) = @_;
 

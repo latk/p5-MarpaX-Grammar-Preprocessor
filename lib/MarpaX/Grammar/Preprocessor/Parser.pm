@@ -18,6 +18,7 @@ use Moo;
 use MarpaX::Grammar::Preprocessor::Result;
 use MarpaX::Grammar::Preprocessor::TokenType;
 use Util::Underscore v1.3.0;
+use namespace::clean;
 
 my $TOKEN_TYPE = 'MarpaX::Grammar::Preprocessor::TokenType';
 my $TT_IDENT = $TOKEN_TYPE->coerce('IDENT');
@@ -41,15 +42,16 @@ my $TT_CLOSE = $TOKEN_TYPE->coerce('CLOSE');
     $parser->pump;
     my $result = $parser->result;
 
-    $parser->buffer_push;
-    $parser->buffer_write('foo ::= bar');
-    $parser->buffer_join;
+    $parser->write('foo');
+    $parser->write_deferred('foo ::= bar');
 
     my ($type, $value) = $parser->next_token;
 
     my $value = $parser->expect('IDENT', 'LITERAL');
 
 =head2 CONSTRUCTOR
+
+=for Pod::Coverage BUILD
 
     $parser = MarpaX::Grammar::Preprocessor::Parser->new(
         source_ref => \$string,
@@ -88,12 +90,16 @@ a new Parser instance.
 
 =cut
 
+my %CTOR_ARG_MAPPING;
+
 # the currently active namespace, or undef if no namespace is set
 has _MarpaX_Grammar_Preprocessor_Parser_namespace => (
     is => 'rw',
     default => sub { undef },
 );
 my $_namespace = sub { shift()->_MarpaX_Grammar_Preprocessor_Parser_namespace(@_) };
+$CTOR_ARG_MAPPING{_MarpaX_Grammar_Preprocessor_Parser_namespace} =
+    '_MarpaX_Grammar_Preprocessor_Parser_namespace';
 
 # the thing between namespace parts
 has _MarpaX_Grammar_Preprocessor_Parser_namespace_separator => (
@@ -102,6 +108,8 @@ has _MarpaX_Grammar_Preprocessor_Parser_namespace_separator => (
     default => sub { '__' },
 );
 my $_namespace_separator = '_MarpaX_Grammar_Preprocessor_Parser_namespace_separator';
+$CTOR_ARG_MAPPING{namespace_separator} =
+    '_MarpaX_Grammar_Preprocessor_Parser_namespace_separator';
 
 # the documentation hash mapping symbols to docstrings
 has _MarpaX_Grammar_Preprocessor_Parser_docs => (
@@ -109,6 +117,8 @@ has _MarpaX_Grammar_Preprocessor_Parser_docs => (
     default => sub { {} },
 );
 my $_docs = sub { shift()->_MarpaX_Grammar_Preprocessor_Parser_docs(@_) };
+$CTOR_ARG_MAPPING{_MarpaX_Grammar_Preprocessor_Parser_docs} =
+    '_MarpaX_Grammar_Preprocessor_Parser_docs';
 
 # the input grammar
 has _MarpaX_Grammar_Preprocessor_Parser_source_ref => (
@@ -117,15 +127,19 @@ has _MarpaX_Grammar_Preprocessor_Parser_source_ref => (
     required => 1,
 );
 my $_source_ref = sub { shift()->_MarpaX_Grammar_Preprocessor_Parser_source_ref(@_) };
+$CTOR_ARG_MAPPING{source_ref} =
+    '_MarpaX_Grammar_Preprocessor_Parser_source_ref';
 
 # the output buffers
-# Manipulate this only through the buffer_* methods!
+# Manipulate this only through the write and write_deferred methods.
 has _MarpaX_Grammar_Preprocessor_Parser_buffers => (
     is => 'ro',
     init_arg => 'buffers',
     required => 1,
 );
 my $_buffers = sub { shift()->_MarpaX_Grammar_Preprocessor_Parser_buffers(@_) };
+$CTOR_ARG_MAPPING{buffers} =
+    '_MarpaX_Grammar_Preprocessor_Parser_buffers';
 
 # avoids generating the same optional rule twice
 has _MarpaX_Grammar_Preprocessor_Parser_optional_rule_cache => (
@@ -133,6 +147,19 @@ has _MarpaX_Grammar_Preprocessor_Parser_optional_rule_cache => (
     default => sub { {} },
 );
 my $_optional_rule_cache = sub { shift()->_MarpaX_Grammar_Preprocessor_Parser_optional_rule_cache(@_) };
+$CTOR_ARG_MAPPING{_MarpaX_Grammar_Preprocessor_Parser_optional_rule_cache} =
+    '_MarpaX_Grammar_Preprocessor_Parser_optional_rule_cache';
+
+sub BUILD {
+    my ($self) = @_;
+
+    my $buffers = $self->$_buffers;
+    if (@$buffers != 2) {
+        _::croak "requires two buffers for immediate and deferred content";
+    }
+
+    return;
+}
 
 ################################################################################
 #
@@ -158,119 +185,117 @@ sub result {
     my ($self) = @_;
 
     my $buffers = $self->$_buffers;
-    _::croak "Inline rules were not closed" if @$buffers != 1;
+    _::croak "Inline rules were not closed" if @$buffers != 2;
 
     return MarpaX::Grammar::Preprocessor::Result->new(
-        slif_source => $buffers->[0],
+        slif_source => $buffers->[0] . $buffers->[1],
         docs => $self->$_docs,
     );
 }
 
-=head2 buffer_push
+=head2 new_with
 
-    $parser->buffer_push;
-    $parser->buffer_push($initial_value_for_deferred_buffer);
+    $copy = $parser->new_with(%constructor_arguments);
 
-Selects the deferred buffer as the current buffer, and adds a new deferred buffer.
+creates a shallow copy of the C<$parser> with the given C<%constructor_arguments>.
 
-Given the current buffer "A" and the deferred buffer "B", this will create a new buffer "C".
-After the call, the current buffer will be "B" and the deferred buffer "C".
+The constructor for the C<$copy> will be invoked with the current state of the C<$parser>,
+unless an argument is explicitly overridden.
+So invoking C<new_with()> and not specifying any arguments will result in a shallow copy of the C<$parser>.
 
-You will need to call C<buffer_join()> afterwards to switch back to the original buffers.
+See the C<CONSTRUCTOR|/"CONSTRUCTOR"> for available options.
 
-B<$initial_value_for_deferred_buffer>
-is the optional default value for the newly created buffer, as a string.
-If not provided, the buffer is initialized with unspecified syntax
-that is safe to occur between SLIF rules,
-e.g. a space or a semicolon.
+B<%constructor_arguments>
+is a key–value list of explicit constructor arguments.
 
-B<Returns> nothing.
+B<Returns>
+a new Parser instance.
 
-B<Throws> never.
+B<Overriding>:
+This C<new_with()> method handles subclasses correctly:
+It will create a new instance of the subclass, rather than of this Parser class.
+However, it does not know about any state a subclass might have.
+Therefore, all subclasses should override this method.
+Simply specify the current state of your class and then append the user-specified C<%constructor_arguments>:
 
-B<Example:>
+    package MyParser;
+    use Moo;
+    extends 'MarpaX::Grammar::Preprocessor::Parser';
+    use namespace::clean;
 
-    $parser->buffer_push;
-    $parser->buffer_write("HelperRule ::= Thing; ");
-    $parser->buffer_join;
+    has _custom_state => (is => 'ro', required => 1);
+
+    around new_with => sub {
+        my ($orig, $self, %constructor_arguments) = @_;
+        return $orig->(
+            $self,
+            _custom_state => $self->_custom_state,
+            %constructor_arguments,
+        ):
+    };
 
 =cut
 
-sub buffer_push {
-    my ($self, $init) = @_;
-    $init //= '; ';
+sub new_with {
+    my ($self, %override_args) = @_;
 
-    push @{ $self->$_buffers }, $init;
+    my %args;
+    while (my ($arg_name, $method) = each %CTOR_ARG_MAPPING) {
+        $args{$arg_name} = $self->$method;
+    }
 
-    return;
+    return $self->new(
+        %args,
+        %override_args,
+    );
 }
 
-=head2 buffer_write
+=head2 write
 
-    $parser->buffer_write(@slif_fragments);
+=head2 write_deferred
 
-Appends the given C<@slif_fragments> to the currently selected buffer.
+    $parser->write(@slif_fragments)
+    $parser->write_deferred(@slif_fragments)
+
+append the C<@slif_fragments> to the output buffer,
 
 You should make sure that the SLIF fragment is valid
-in the context of the current buffer.
-If the SLIF fragment does not necessarily have to be right here
-but just at some point in the output,
-then you can switch to the deferred buffer with C<buffer_push()>.
+in the context of the current location.
+If the SLIF fragment does not necessarily have to stand right here
+but must merely occur at some point in the output,
+then you can write to the deferred buffer with C<write_deferred()>.
 
-Note that writing to the buffer is an uncomposable side effect.
+Note that writing to a buffer is an uncomposable side effect.
 If your command only produces a single value,
-you should probably use it as a return value
-to allow other commands to apply additional transformations.
-The preprocess will eventually write any returned value to the buffer.
+you should probably use it as a return value.
+This way, other commands can apply additional transformations,
+The preprocessor will eventually write any returned value to the buffer.
 
 B<@slif_fragments>
-is a list of strings that you want to write into the current buffer.
+is a list of strings that you want to write to the buffer.
 As with the builtins C<say> and C<print>, the strings are joined with no space in between.
 
 B<Example:>
 
-    $parser->buffer_write("# frobnication of next symbol\n");
+    $parser->write("# frobnicate the next symbol\n");
+    $parser->write_deferred("HelperRule ::= Thing; ");
 
 =cut
 
-sub buffer_write {
+sub write {
     my ($self, @things) = @_;
     my $buffers = $self->$_buffers;
 
-    _::croakf q(No currently selected buffer)
-        if @$buffers < 2;
-
-    $buffers->[-2] .= $_ for @things;
+    $buffers->[0] .= $_ for @things;
 
     return;
 }
 
-=head2 buffer_join
-
-    $parser->buffer_join;
-
-Writes the deferred buffer to the selected buffer, and selects the previous buffer.
-
-Any call to C<buffer_push()> should be mirrored by a C<buffer_join()> call.
-
-B<Returns> nothing.
-
-B<Throws> if no buffer is currently selected.
-
-B<Example:>
-
-    $parser->buffer_push();
-    $parser->buffer_write("deferred ~ stuff");
-    $parser->buffer_join;
-
-=cut
-
-sub buffer_join {
-    my ($self) = @_;
+sub write_deferred {
+    my ($self, @things) = @_;
     my $buffers = $self->$_buffers;
 
-    my $last_buffer = pop @$buffers;
-    $buffers->[-1] .= $last_buffer;
+    $buffers->[1] .= $_ for @things;
 
     return;
 }
@@ -282,12 +307,14 @@ sub buffer_join {
 poll for tokens until the source is exhausted.
 Token values are appended to the currently selected buffer.
 
+The pump terminates when the end of the input is reached,
+or a C<CLOSE> token.
+
 This method is called by parser clients to drive the parser through the input.
 
 B<Returns> nothing.
 
-B<Throws> if C<next_token()> throws at any point,
-or if C<buffer_push>, C<buffer_write>, or C<buffer_join> would throw.
+B<Throws> if C<next_token()> throws at any point.
 
 B<Example>:
 
@@ -305,11 +332,10 @@ sub pump {
     my ($self) = @_;
 
     # pump the whole source through the preprocessor
-    $self->buffer_push;
     while (my ($type, $value) = $self->next_token) {
-        $self->buffer_write($value);
+        last if $type == $TT_CLOSE;
+        $self->write($value);
     }
-    $self->buffer_join;
 
     return;
 }
@@ -367,7 +393,7 @@ sub next_token {
         while (pos() < length()) {
             # write white space and comments directly to the current buffer
             if (m/\G( \s+ | [#] [^\n]* )/gc) {
-                $self->buffer_write($1);
+                $self->write($1);
                 next TRY;
             }
 
@@ -414,19 +440,16 @@ sub next_token {
 
             # read inline rule
             if (m/\G [{]/gc) {
-                $self->buffer_push;
+                my $scoped = $self->new_with(buffers => ['', '; ']);
                 # the first identifier in the scope is the name of the inline rule
-                my $name = $self->expect($TT_IDENT);
+                my $name = $scoped->expect($TT_IDENT);
+                $scoped->write($name);
 
                 # pump the whole inline rule into the deferred buffer
                 # FIXME should throw error when rule is exhausted,
                 # rather than properly terminated through CLOSE.
-                $self->buffer_write($name);
-                while (my ($type, $value) = $self->next_token) {
-                    last if $type == $TT_CLOSE;
-                    $self->buffer_write($value);
-                }
-                $self->buffer_join;
+                $scoped->pump;
+                $self->write_deferred($scoped->result->slif_source);
 
                 # return the name of the inline rule
                 return $TT_IDENT, $name;
@@ -665,7 +688,7 @@ B<Example:>
 sub command_keyword {
     my ($self) = @_;
     my $name = $self->expect($TT_IDENT);
-    $self->buffer_write(":lexeme ~ $name priority => 1;");
+    $self->write(":lexeme ~ $name priority => 1;");
     return $TT_IDENT, $name;
 }
 
@@ -818,9 +841,7 @@ sub command_optional {
     my $optional_rule = $cache_ref->{$rule} //= do {
         my $optional_rule = $rule . $self->$_namespace_separator . "Optional";
 
-        $self->buffer_push;
-        $self->buffer_write("$optional_rule ::= action => ::undef; $optional_rule ::= $rule action => ::first");
-        $self->buffer_join;
+        $self->write_deferred("$optional_rule ::= action => ::undef; $optional_rule ::= $rule action => ::first; ");
 
         $optional_rule;
     };

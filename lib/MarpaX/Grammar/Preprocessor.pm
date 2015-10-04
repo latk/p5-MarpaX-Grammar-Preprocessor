@@ -213,19 +213,13 @@ E.g. if the return value is to be used on the right hand side of a rule,
 it must be an C<IDENT> or C<LITERAL>.
 
 You may also use the
-L<C<buffer_push()>|MarpaX::Grammar::Preprocessor::Parser/"buffer_push">,
-L<C<buffer_write()>|MarpaX::Grammar::Preprocessor::Parser/"buffer_write">, and
-L<C<buffer_join()>|MarpaX::Grammar::Preprocessor::Parser/"buffer_join"> methods.
-The buffer system manages any number of buffers.
-One buffer is the currently selected buffer, another is the deferred buffer.
-Only write to the current buffer if you know it is safe to do so
+L<C<write()>|MarpaX::Grammar::Preprocessor::Parser/"write"> and
+L<C<write_deferred()>|MarpaX::Grammar::Preprocessor::Parser/"write_deferred"> methods
+to write SLIF rules to an output buffer.
+Only C<write()> to the main buffer if it is safe to do so
 (e.g. if your command is supposed to be only used at the start of a rule).
-Otherwise, select the deferred buffer with C<buffer_write()>.
-Once finished, you will need to switch back with C<buffer_join()>.
-The contents of the deferred buffer will be appended to the main buffer
-once that buffer is complete and in a presumably syntactically safe state.
-
-Actually, buffers are way less complicated than that – just read the source of this module.
+Otherwise, use C<write_deferred()> for SLIF fragments that don't need to stand right here
+but should become part of the output at some point.
 
 =cut
 
@@ -274,7 +268,7 @@ sub _MarpaX_Grammar_Preprocessor_parser_factory_default {
     my ($self, $source_ref, %other_args) = @_;
     return MarpaX::Grammar::Preprocessor::Parser->new(
         source_ref => $source_ref,
-        buffers => [$self->SLIF_PRELUDE],
+        buffers => [$self->SLIF_PRELUDE, '; '],
         %other_args,
     );
 }
