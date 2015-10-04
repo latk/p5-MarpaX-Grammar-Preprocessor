@@ -260,6 +260,16 @@ describe next_token => sub {
             };
     };
 
+    it 'throws when no explicit pos() was defined' => parser_fixture
+        source_ref => \"",
+        buffers => [],
+        test => sub {
+            my ($parser) = @_;
+
+            throws_ok { $parser->next_token }
+                qr/\A\Qinput source match position was not defined\E\b/;
+        };
+
     it 'appends whitespace and comments to buffer, then returns next token' => sub {
         my $case = sub {
             my ($whitespace) = @_;
@@ -470,6 +480,28 @@ describe next_token => sub {
 
             is_deeply \@result, [OP => '::=|+*=>'], 'got OP token';
         };
+
+    it 'tries to explain impossible syntax errors' => parser_fixture
+        input => '',
+        input_after => q(''345678901234567890), # 20 char tail
+        buffers => ['a', 'b'],
+        test => sub {
+            my ($parser) = @_;
+
+            throws_ok { $parser->next_token }
+                qr/\A\QIllegal code path taken: unknown grammar string at "''345678901234567890"\E/;
+        };
+
+    it 'tries to explain impossible syntax errors with shortened input' => parser_fixture
+        input => '',
+        input_after => q(''3456789012345678901), # 21 char tail
+        buffers => ['a', 'b'],
+        test => sub {
+            my ($parser) = @_;
+
+            throws_ok { $parser->next_token }
+                qr/\A\QIllegal code path taken: unknown grammar string at "''345678901234567..."\E/;
+        };
 };
 
 BEGIN {
@@ -569,9 +601,31 @@ describe expect => sub {
 sub test_simple_macro_substitution {
     my (%args) = @_;
     my $method = delete $args{method} // die "expected named argument method";
-    my $expected = delete $args{expected} // die "expected named argument expected";
     my $message = delete $args{message} // 'got SLIF snippet';
+
+    my $main_test;
+    if (my $regex = delete $args{throws_ok}) {
+        $message //= $regex;
+        $main_test = sub {
+            my ($parser) = @_;
+            throws_ok { $parser->$method } $regex, $message;
+        };
+    }
+    elsif (my $expected = delete $args{expected})
+    {
+        $message //= 'got SLIF snippet';
+        $main_test = sub {
+            my ($parser) = @_;
+            my @result = $parser->$method;
+            is_deeply \@result, $expected, $message;
+        };
+    }
+    else {
+        die "expected named argument expected or throws_ok";
+    }
+
     exists $args{test} and die "named argument test cannot be used in test_simple_macro_substitution";
+
     return parser_fixture
         %args,
         test => sub {
@@ -579,9 +633,7 @@ sub test_simple_macro_substitution {
 
             my $source_ref = $parser->_MarpaX_Grammar_Preprocessor_Parser_source_ref;
             for ($source_ref ? $$source_ref : undef) {
-                my @result = $parser->$method;
-
-                is_deeply \@result, $expected, $message;
+                $main_test->($parser);
             }
         };
 }
@@ -622,11 +674,20 @@ describe command_lax => test_simple_macro_substitution
     expected => [OP => 'proper => 0'],
     buffers => ['a', 'b'];
 
-describe command_do => test_simple_macro_substitution
-    method => 'command_do',
-    input => ' FooBar',
-    expected => [OP => 'action => do_FooBar'],
-    buffers => ['a', 'b'];
+describe command_do => sub {
+    it 'parses the action name' => test_simple_macro_substitution
+        method => 'command_do',
+        input => ' FooBar',
+        expected => [OP => 'action => do_FooBar'],
+        buffers => ['a', 'b'];
+
+    it 'dies when no action name could be found' => test_simple_macro_substitution
+        method => 'command_do',
+        input => '',
+        input_after => ' %glorp',
+        throws_ok => qr/\A\QExpected action name\E\b/,
+        buffers => ['a', 'b'];
+};
 
 describe command_sep => test_simple_macro_substitution
     method => 'command_sep',
@@ -676,33 +737,103 @@ describe command_namespace => test_simple_macro_substitution
         is $ns, 'some_identifier', 'namespace has been set';
     };
 
-describe command_doc => test_simple_macro_substitution
-    method => 'command_doc',
-    input =>
-        qq( """ foo\n) .
-        qq("""   bar\n) .
-        qq(      """ baz\n),
-    input_after => qq( "" qux),
-    class => 'Local::Parser::MockNextToken',
-    ctor_args => {
-        mock_tokens => [
-            [IDENT => 'some_identifier'],
-            sub { die "should never be seen" },
-        ],
-        _MarpaX_Grammar_Preprocessor_Parser_docs=> { foo => "foo docs" },
-    },
-    expected => [IDENT => 'some_identifier'],
-    message => 'passes through identifier',
-    buffers => ['a', 'b'],
-    postcondition => sub {
-        my ($parser) = @_;
-        my $docs = $parser->_MarpaX_Grammar_Preprocessor_Parser_docs,
-        my $expected_docs = {
-            foo => "foo docs",
-            some_identifier => "foo\n  bar\nbaz",
+describe command_doc => sub {
+    it 'can parse multiline docstrings' => test_simple_macro_substitution
+        method => 'command_doc',
+        input =>
+            qq( """ foo\n) .
+            qq("""   bar\n) .
+            qq(      """ baz\n),
+        input_after => qq( "" qux),
+        class => 'Local::Parser::MockNextToken',
+        ctor_args => {
+            mock_tokens => [
+                [IDENT => 'some_identifier'],
+                sub { die "should never be seen" },
+            ],
+            _MarpaX_Grammar_Preprocessor_Parser_docs=> { foo => "foo docs" },
+        },
+        expected => [IDENT => 'some_identifier'],
+        message => 'passes through identifier',
+        buffers => ['a', 'b'],
+        postcondition => sub {
+            my ($parser) = @_;
+            my $docs = $parser->_MarpaX_Grammar_Preprocessor_Parser_docs,
+            my $expected_docs = {
+                foo => "foo docs",
+                some_identifier => "foo\n  bar\nbaz",
+            };
+            is_deeply $docs, $expected_docs, 'stored documentation matches';
         };
-        is_deeply $docs, $expected_docs, 'stored documentation matches';
-    };
+
+    it 'can hide symbols' => test_simple_macro_substitution
+        method => 'command_doc',
+        input => 'hide',
+        class => 'Local::Parser::MockNextToken',
+        ctor_args => {
+            mock_tokens => [
+                [IDENT => 'some_identifier'],
+                sub { die "should never be seen" },
+            ],
+            _MarpaX_Grammar_Preprocessor_Parser_docs=> { foo => "foo docs" },
+        },
+        expected => [IDENT => 'some_identifier'],
+        message => 'passes through identifier',
+        buffers => ['a', 'b'],
+        postcondition => sub {
+            my ($parser) = @_;
+            my $docs = $parser->_MarpaX_Grammar_Preprocessor_Parser_docs,
+            my $expected_docs = {
+                foo => "foo docs",
+                some_identifier => undef,
+            };
+            is_deeply $docs, $expected_docs, 'stored documentation matches';
+        };
+
+    it 'throws on illegal syntax' => test_simple_macro_substitution
+        method => 'command_doc',
+        input => '',
+        input_after => 'florp6789012345678901',
+        throws_ok => qr/\A\QExpected docstring near "florp678901234567890"...\E/,
+        class => 'Local::Parser::MockNextToken',
+        ctor_args => {
+            mock_tokens => [
+                sub { die "should never be seen" },
+            ],
+            _MarpaX_Grammar_Preprocessor_Parser_docs=> { foo => "foo docs" },
+        },
+        buffers => ['a', 'b'],
+        postcondition => sub {
+            my ($parser) = @_;
+            my $docs = $parser->_MarpaX_Grammar_Preprocessor_Parser_docs,
+            my $expected_docs = {
+                foo => "foo docs",
+            };
+            is_deeply $docs, $expected_docs, 'stored documentation matches';
+        };
+
+    it 'throws when symbol was already defined' => test_simple_macro_substitution
+        method => 'command_doc',
+        input => 'hide',
+        class => 'Local::Parser::MockNextToken',
+        ctor_args => {
+            mock_tokens => [
+                [IDENT => 'some_identifier'],
+                sub { die "should never be seen" },
+            ],
+            _MarpaX_Grammar_Preprocessor_Parser_docs=> { some_identifier => "existing docs" },
+        },
+        throws_ok => qr/\A\QSymbol some_identifier already documented\E\b/,
+        buffers => ['a', 'b'],
+        postcondition => sub {
+            my ($parser) = @_;
+            my $docs = $parser->_MarpaX_Grammar_Preprocessor_Parser_docs,
+            my $expected_docs = {
+                some_identifier => 'existing docs',
+            };
+            is_deeply $docs, $expected_docs, 'stored documentation matches';
+        };
+};
 
 describe command_optional => sub {
     it 'generates optional rules' => test_simple_macro_substitution

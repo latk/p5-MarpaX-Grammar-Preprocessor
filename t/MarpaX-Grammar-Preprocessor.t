@@ -120,6 +120,11 @@ describe preprocess => sub {
         is $result, Local::ParserMock::EXPECTED_RESULT;
         ok $Local::ParserMock::WAS_CALLED, '_MarpaX_Grammar_Preprocessor_pump was called',
     };
+
+    it 'dies when not invoked on an object' => sub {
+        throws_ok { MarpaX::Grammar::Preprocessor->preprocess('foo bar') }
+            qr/\A\Qexpected MarpaX::Grammar::Preprocessor instance in call to preprocess()\E/;
+    };
 };
 
 done_testing;

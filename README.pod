@@ -193,7 +193,8 @@ or poll for the L<< C<next_token()>|MarpaX::Grammar::Preprocessor::Parser/"next_
 Please see their reference documentation for more details.
 
 The command must return a list of two values: the token type and the token value.
-See L<< C<TOKEN_TYPES>|/"TOKEN_TYPES" >> for a list of valid token types.
+See L<< C<TOKEN_TYPES in the TokenType docs>|MarpaX::Grammar::Preprocessor::TokenType/"TOKEN TYPES" >>
+for a list of valid token types.
 Pick an appropriate token type depending on how that value might be used.
 E.g. if the return value is to be used on the right hand side of a rule,
 it must be an C<IDENT> or C<LITERAL>.

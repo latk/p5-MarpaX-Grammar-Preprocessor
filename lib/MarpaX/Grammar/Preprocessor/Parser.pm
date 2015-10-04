@@ -508,8 +508,15 @@ For a general overview of the available sytax,
 see the L<main module description|MarpaX::Grammar::Preprocessor/"DESCRIPTION"> instead.
 
 =head2 command \array
+
 =head2 command \null
+
 =head2 command \do
+
+=for Pod::Coverage
+    command_array
+    command_null
+    command_do
 
     \array
     \null
@@ -545,8 +552,15 @@ sub command_do {
 }
 
 =head2 command \group
+
 =head2 command \left
+
 =head2 command \right
+
+=for Pod::Coverage
+    command_group
+    command_left
+    command_right
 
     \group
     \left
@@ -574,6 +588,9 @@ sub command_right { return $TT_OP, 'assoc => right' }
 
 =head2 command \lax
 
+=for Pod::Coverage
+    command_lax
+
     \lax
 
 In a sequence rule, allow a trailing separator.
@@ -593,6 +610,9 @@ B<Example:>
 sub command_lax { return $TT_OP, 'proper => 0' }
 
 =head2 command \sep
+
+=for Pod::Coverage
+    command_sep
 
     \sep RULE
 
@@ -617,6 +637,9 @@ sub command_sep {
 }
 
 =head2 command \keyword
+
+=for Pod::Coverage
+    command_keyword
 
     \keyword IDENT
 
@@ -647,6 +670,9 @@ sub command_keyword {
 }
 
 =head2 command \namespace
+
+=for Pod::Coverage
+    command_namespace
 
     \namespace IDENT
 
@@ -680,6 +706,9 @@ sub command_namespace {
 
 =head2 command \doc
 
+=for Pod::Coverage
+    command_doc
+
     \doc hide IDENT
     \doc DOCSTRING IDENT
     DOCSTRING IDENT
@@ -687,7 +716,7 @@ sub command_namespace {
 Associate a C<DOCSTRING> with a given C<IDENT>,
 or C<hide> a symbol from the doc system.
 
-You can retrieve the documentation hash via L<C<docs()>|/"docs"> from the result object.
+You can retrieve the documentation hash via L<C<docs()>|MarpaX::Grammar::Preprocessor::Result/"docs"> from the result object.
 
 The C<\doc> command can be omitted when using docstrings:
 C<\doc """ foo> and C<""" foo> are equivalent.
@@ -735,7 +764,7 @@ sub command_doc {
     }
     else {
         my $next_source = substr $_, pos, 20;
-        die "Expected docstring near ", _::pp $next_source, "...";
+        die sprintf "Expected docstring near %s...", _::pp $next_source;
     }
 
     my $symbol = $self->expect($TT_IDENT);
@@ -745,6 +774,9 @@ sub command_doc {
 }
 
 =head2 command \optional
+
+=for Pod::Coverage
+    command_optional
 
     \optional RULE
 
@@ -781,8 +813,9 @@ B<Example:>
 
 sub command_optional {
     my ($self) = @_;
+    my $cache_ref = $self->$_optional_rule_cache;
     my $rule = $self->expect($TT_IDENT);
-    return $TT_IDENT, $self->$_optional_rule_cache()->{$rule} //= do {
+    my $optional_rule = $cache_ref->{$rule} //= do {
         my $optional_rule = $rule . $self->$_namespace_separator . "Optional";
 
         $self->buffer_push;
@@ -791,6 +824,7 @@ sub command_optional {
 
         $optional_rule;
     };
+    return $TT_IDENT, $optional_rule;
 }
 
 1;

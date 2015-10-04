@@ -21,6 +21,10 @@ my $REGISTRY_BY_NAME = {};
 
 =head1 CONSTRUCTOR
 
+=for Pod::Coverage BUILDARGS
+
+=for Pod::Coverage BUILD
+
     $token_type = MarpaX::Grammar::Preprocessor::TokenType->new($name);
 
 add a new token type to the token type registry.
@@ -76,6 +80,7 @@ Convert to a string.
 B<Returns> the L<C<name()>|/"name">.
 
 =head2 operator ==
+
 =head2 operator eq
 
     $token_a == $token_b
@@ -97,11 +102,17 @@ use overload (
     '""' => sub { shift->name },
     '==' => '_MarpaX_Grammar_Preprocessor_TokenType_operator_EQ',
     'eq' => '_MarpaX_Grammar_Preprocessor_TokenType_operator_EQ',
+    '!=' => '_MarpaX_Grammar_Preprocessor_TokenType_operator_NE',
+    'ne' => '_MarpaX_Grammar_Preprocessor_TokenType_operator_NE',
 );
 
 sub _MarpaX_Grammar_Preprocessor_TokenType_operator_EQ {
     my ($x, $y) = @_;
     return (_::ref_addr coerce(undef, $x)) == (_::ref_addr coerce(undef, $y));
+}
+
+sub _MarpaX_Grammar_Preprocessor_TokenType_operator_NE {
+    return not &_MarpaX_Grammar_Preprocessor_TokenType_operator_EQ;
 }
 
 =head2 coerce
@@ -124,8 +135,12 @@ sub coerce {
     my ($class, $name_or_token_type) = @_;
     return $name_or_token_type
         if _::is_instance $name_or_token_type, __PACKAGE__;
-    return $REGISTRY_BY_NAME->{$name_or_token_type}
-        // _::croakf q(No token type for name=%s), $name_or_token_type;
+    _::croak q(Token type must be TokenType instance or plain string)
+        if not _::is_plain $name_or_token_type;
+    my $token_type = $REGISTRY_BY_NAME->{$name_or_token_type};
+    _::croakf q(No token type for name=%s), $name_or_token_type
+        if not defined $token_type;
+    return $token_type;
 }
 
 =head2 all_token_types
