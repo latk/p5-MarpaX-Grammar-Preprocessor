@@ -78,6 +78,9 @@ sub parser_fixture {
     }
 
     my $buffers = delete $args{buffers} // die "argument buffers required";
+    if (@$buffers != 2) {
+        die "argument buffers requires an arrayref of exactly two buffers";
+    }
     my $buffers_unchanged = 0;
     my $buffers_expected = delete $args{buffers_expected} // do {
         $buffers_unchanged = 1;
@@ -96,6 +99,10 @@ sub parser_fixture {
 
     my $real_postcondition = sub {
         my ($parser) = @_;
+        my $buffers = [
+            ${ $parser->_MarpaX_Grammar_Preprocessor_Parser_buffer },
+            ${ $parser->_MarpaX_Grammar_Preprocessor_Parser_buffer_deferred },
+        ];
         is_deeply $buffers, $buffers_expected, $buffers_message;
         is pos($$source_ref), $pos_expected, $pos_message
             if not $source_ref_explicit;
@@ -107,10 +114,13 @@ sub parser_fixture {
         die "Unknown named arguments: @keys, died";
     }
 
+
     return sub {
+        my ($buffer_main, $buffer_deferred) = @$buffers;
         my $parser = $class->new(
             source_ref => $source_ref,
-            buffers => $buffers,
+            buffer => \$buffer_main,
+            buffer_deferred => \$buffer_deferred,
             %$ctor_args,
         );
 
@@ -165,7 +175,8 @@ describe new_with => sub {
         my $source = 'foo';
         my $orig = THE_CLASS->new(
             source_ref => \$source,
-            buffers => [undef, undef],
+            buffer => undef,
+            buffer_deferred => undef,
         );
 
         my $copy = $orig->new_with();
@@ -191,7 +202,8 @@ describe new_with => sub {
         _::const my $source => 'foo';
         _::const my $orig => THE_CLASS->new(
             source_ref => \$source,
-            buffers => [undef, undef],
+            buffer => undef,
+            buffer_deferred => undef,
         );
         _::const my $new_namespace => 'new namespace';
         _::const my $new_namespace_separator => '::';
@@ -240,7 +252,8 @@ describe new_with => sub {
         my $orig = Local::ParserSubclassForNewWith->new(
             _custom_state => 42,
             source_ref => undef,
-            buffers => [undef, undef],
+            buffer => undef,
+            buffer_deferred => undef,
         );
 
         my $copy = $orig->new_with(source_ref => \"foo");

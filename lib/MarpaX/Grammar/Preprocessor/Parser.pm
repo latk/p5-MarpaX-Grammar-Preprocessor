@@ -51,10 +51,10 @@ my $TT_CLOSE = $TOKEN_TYPE->coerce('CLOSE');
 
 =head2 CONSTRUCTOR
 
-=for Pod::Coverage BUILD
-
     $parser = MarpaX::Grammar::Preprocessor::Parser->new(
         source_ref => \$string,
+        buffer => do { my $buffer = $prelude; \$buffer },
+        buffer_deferred = do { my $buffer = ''; \$buffer },
         buffers => [$prelude],
         namespace_separator => '__',
     );
@@ -67,15 +67,17 @@ The C<source_ref> named argument is the input SLIF source to the preprocessor.
 The contents of the string will not be modified,
 but the current match position C<pos($string)> will be changed.
 
-B<buffers>: array reference of strings
+B<buffer>: reference to string
 
-The initial buffers for the parser.
-It should contain exactly one item,
-which contains the prelude for the output
-as a string.
-The array reference will be modified,
-so you should use an array reference literal C<[...]>
-rather than passing in a variable.
+B<buffer_deferred>: reference to string
+
+The output buffers for the parser.
+The referred-to string will be modified,
+so you should probably pass a reference to a copy of any initial string
+C<do { my $buffer = $initial; \$buffer }>
+rather than passing a reference to a variable
+C<\$initial>.
+
 
 B<namespace_separator>: string
 
@@ -130,16 +132,27 @@ my $_source_ref = sub { shift()->_MarpaX_Grammar_Preprocessor_Parser_source_ref(
 $CTOR_ARG_MAPPING{source_ref} =
     '_MarpaX_Grammar_Preprocessor_Parser_source_ref';
 
-# the output buffers
-# Manipulate this only through the write and write_deferred methods.
-has _MarpaX_Grammar_Preprocessor_Parser_buffers => (
+# the main output buffer
+# Manipulate this only through the write() method.
+has _MarpaX_Grammar_Preprocessor_Parser_buffer => (
     is => 'ro',
-    init_arg => 'buffers',
+    init_arg => 'buffer',
     required => 1,
 );
-my $_buffers = sub { shift()->_MarpaX_Grammar_Preprocessor_Parser_buffers(@_) };
-$CTOR_ARG_MAPPING{buffers} =
-    '_MarpaX_Grammar_Preprocessor_Parser_buffers';
+my $_buffer = sub { shift()->_MarpaX_Grammar_Preprocessor_Parser_buffer(@_) };
+$CTOR_ARG_MAPPING{buffer} =
+    '_MarpaX_Grammar_Preprocessor_Parser_buffer';
+
+# the deferred output buffer
+# Manipulate this only through the write_deferred() method.
+has _MarpaX_Grammar_Preprocessor_Parser_buffer_deferred => (
+    is => 'ro',
+    init_arg => 'buffer_deferred',
+    required => 1,
+);
+my $_buffer_deferred = sub { shift()->_MarpaX_Grammar_Preprocessor_Parser_buffer_deferred(@_) };
+$CTOR_ARG_MAPPING{buffer_deferred} =
+    '_MarpaX_Grammar_Preprocessor_Parser_buffer_deferred';
 
 # avoids generating the same optional rule twice
 has _MarpaX_Grammar_Preprocessor_Parser_optional_rule_cache => (
@@ -149,17 +162,6 @@ has _MarpaX_Grammar_Preprocessor_Parser_optional_rule_cache => (
 my $_optional_rule_cache = sub { shift()->_MarpaX_Grammar_Preprocessor_Parser_optional_rule_cache(@_) };
 $CTOR_ARG_MAPPING{_MarpaX_Grammar_Preprocessor_Parser_optional_rule_cache} =
     '_MarpaX_Grammar_Preprocessor_Parser_optional_rule_cache';
-
-sub BUILD {
-    my ($self) = @_;
-
-    my $buffers = $self->$_buffers;
-    if (@$buffers != 2) {
-        _::croak "requires two buffers for immediate and deferred content";
-    }
-
-    return;
-}
 
 ################################################################################
 #
@@ -184,12 +186,13 @@ B<Throws> if the parse failed.
 sub result {
     my ($self) = @_;
 
-    my $buffers = $self->$_buffers;
-    _::croak "Inline rules were not closed" if @$buffers != 2;
+    my $buffer = $self->$_buffer;
+    my $buffer_deferred = $self->$_buffer_deferred;
+    my $docs = $self->$_docs;
 
     return MarpaX::Grammar::Preprocessor::Result->new(
-        slif_source => $buffers->[0] . $buffers->[1],
-        docs => $self->$_docs,
+        slif_source => $$buffer . $$buffer_deferred,
+        docs => $docs,
     );
 }
 
@@ -284,18 +287,18 @@ B<Example:>
 
 sub write {
     my ($self, @things) = @_;
-    my $buffers = $self->$_buffers;
+    my $buffer = $self->$_buffer;
 
-    $buffers->[0] .= $_ for @things;
+    $$buffer .= $_ for @things;
 
     return;
 }
 
 sub write_deferred {
     my ($self, @things) = @_;
-    my $buffers = $self->$_buffers;
+    my $buffer = $self->$_buffer_deferred;
 
-    $buffers->[1] .= $_ for @things;
+    $$buffer .= $_ for @things;
 
     return;
 }
@@ -440,7 +443,10 @@ sub next_token {
 
             # read inline rule
             if (m/\G [{]/gc) {
-                my $scoped = $self->new_with(buffers => ['', '; ']);
+                my $scoped = $self->new_with(
+                    buffer => do { my $b = ''; \$b },
+                    buffer_deferred => do { my $b = '; '; \$b },
+                );
                 # the first identifier in the scope is the name of the inline rule
                 my $name = $scoped->expect($TT_IDENT);
                 $scoped->write($name);

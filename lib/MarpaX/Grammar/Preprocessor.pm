@@ -268,7 +268,8 @@ sub _MarpaX_Grammar_Preprocessor_parser_factory_default {
     my ($self, $source_ref, %other_args) = @_;
     return MarpaX::Grammar::Preprocessor::Parser->new(
         source_ref => $source_ref,
-        buffers => [$self->SLIF_PRELUDE, '; '],
+        buffer => do { my $b = $self->SLIF_PRELUDE; \$b },
+        buffer_deferred => do { my $b = '; '; \$b },
         %other_args,
     );
 }
