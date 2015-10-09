@@ -94,74 +94,69 @@ a new Parser instance.
 
 my %CTOR_ARG_MAPPING;
 
+my $attribute = sub {
+    my ($name, %args) = @_;
+
+    if (my $init_arg = $args{init_arg}) {
+        $CTOR_ARG_MAPPING{$init_arg} = $name;
+    }
+    else {
+        $CTOR_ARG_MAPPING{$name} = $name;
+    }
+
+    has $name => (is => 'ro', %args);
+
+    return sub { shift()->$name(@_) };
+};
+
 # the currently active namespace, or undef if no namespace is set
-has _MarpaX_Grammar_Preprocessor_Parser_namespace => (
+my $_namespace = $attribute->(
+    _MarpaX_Grammar_Preprocessor_Parser_namespace =>
     is => 'rw',
     default => sub { undef },
 );
-my $_namespace = sub { shift()->_MarpaX_Grammar_Preprocessor_Parser_namespace(@_) };
-$CTOR_ARG_MAPPING{_MarpaX_Grammar_Preprocessor_Parser_namespace} =
-    '_MarpaX_Grammar_Preprocessor_Parser_namespace';
 
 # the thing between namespace parts
-has _MarpaX_Grammar_Preprocessor_Parser_namespace_separator => (
-    is => 'ro',
+my $_namespace_separator = $attribute->(
+    _MarpaX_Grammar_Preprocessor_Parser_namespace_separator =>
     init_arg => 'namespace_separator',
     default => sub { '__' },
 );
-my $_namespace_separator = '_MarpaX_Grammar_Preprocessor_Parser_namespace_separator';
-$CTOR_ARG_MAPPING{namespace_separator} =
-    '_MarpaX_Grammar_Preprocessor_Parser_namespace_separator';
 
 # the documentation hash mapping symbols to docstrings
-has _MarpaX_Grammar_Preprocessor_Parser_docs => (
-    is => 'ro',
+my $_docs = $attribute->(
+    _MarpaX_Grammar_Preprocessor_Parser_docs =>
     default => sub { {} },
 );
-my $_docs = sub { shift()->_MarpaX_Grammar_Preprocessor_Parser_docs(@_) };
-$CTOR_ARG_MAPPING{_MarpaX_Grammar_Preprocessor_Parser_docs} =
-    '_MarpaX_Grammar_Preprocessor_Parser_docs';
 
 # the input grammar
-has _MarpaX_Grammar_Preprocessor_Parser_source_ref => (
-    is => 'ro',
+my $_source_ref = $attribute->(
+    _MarpaX_Grammar_Preprocessor_Parser_source_ref =>
     init_arg => 'source_ref',
     required => 1,
 );
-my $_source_ref = sub { shift()->_MarpaX_Grammar_Preprocessor_Parser_source_ref(@_) };
-$CTOR_ARG_MAPPING{source_ref} =
-    '_MarpaX_Grammar_Preprocessor_Parser_source_ref';
 
 # the main output buffer
 # Manipulate this only through the write() method.
-has _MarpaX_Grammar_Preprocessor_Parser_buffer => (
-    is => 'ro',
+my $_buffer = $attribute->(
+    _MarpaX_Grammar_Preprocessor_Parser_buffer =>
     init_arg => 'buffer',
     required => 1,
 );
-my $_buffer = sub { shift()->_MarpaX_Grammar_Preprocessor_Parser_buffer(@_) };
-$CTOR_ARG_MAPPING{buffer} =
-    '_MarpaX_Grammar_Preprocessor_Parser_buffer';
 
 # the deferred output buffer
 # Manipulate this only through the write_deferred() method.
-has _MarpaX_Grammar_Preprocessor_Parser_buffer_deferred => (
-    is => 'ro',
+my $_buffer_deferred = $attribute->(
+    _MarpaX_Grammar_Preprocessor_Parser_buffer_deferred =>
     init_arg => 'buffer_deferred',
     required => 1,
 );
-my $_buffer_deferred = sub { shift()->_MarpaX_Grammar_Preprocessor_Parser_buffer_deferred(@_) };
-$CTOR_ARG_MAPPING{buffer_deferred} =
-    '_MarpaX_Grammar_Preprocessor_Parser_buffer_deferred';
 
 # avoids generating the same optional rule twice
-has _MarpaX_Grammar_Preprocessor_Parser_optional_rule_cache => (
-    is => 'ro',
+my $_optional_rule_cache = $attribute->(
+    _MarpaX_Grammar_Preprocessor_Parser_optional_rule_cache =>
     default => sub { {} },
 );
-my $_optional_rule_cache = sub { shift()->_MarpaX_Grammar_Preprocessor_Parser_optional_rule_cache(@_) };
-$CTOR_ARG_MAPPING{_MarpaX_Grammar_Preprocessor_Parser_optional_rule_cache} =
-    '_MarpaX_Grammar_Preprocessor_Parser_optional_rule_cache';
 
 ################################################################################
 #
