@@ -331,7 +331,7 @@ sub pump {
 
     # pump the whole source through the preprocessor
     while (my ($type, $value) = $self->next_token) {
-        last if $type == $TT_CLOSE;
+        return ($type, $value) if $type == $TT_CLOSE;
         $self->write($value);
     }
 
@@ -405,6 +405,7 @@ sub next_token {
 
             # read namespace references and namespaced identifiers
             if (m/\G [%] /gc) {
+                # uncoverable condition right
                 my $ns = $self->$_namespace
                     // _::croak q(No namespace was set);
 
@@ -447,9 +448,15 @@ sub next_token {
                 $scoped->write($name);
 
                 # pump the whole inline rule into the deferred buffer
-                # FIXME should throw error when rule is exhausted,
-                # rather than properly terminated through CLOSE.
-                $scoped->pump;
+                # Throw if the inline rule wasn't terminated via a CLOSE brace.
+                my ($type, $value) = $scoped->pump
+                    or _::croak "Expecting closing brace for inline rule, but got EOF";
+                # uncoverable branch true
+                if ($type != $TT_CLOSE) {
+                    # uncoverable statement
+                    _::croak "Expecting closing brace for inline rule, but got $type";
+                }
+
                 $self->write_deferred($scoped->result->slif_source);
 
                 # return the name of the inline rule
@@ -839,6 +846,7 @@ sub command_optional {
     my ($self) = @_;
     my $cache_ref = $self->$_optional_rule_cache;
     my $rule = $self->expect($TT_IDENT);
+    # uncoverable condition false
     my $optional_rule = $cache_ref->{$rule} //= do {
         my $optional_rule = $rule . $self->$_namespace_separator . "Optional";
 

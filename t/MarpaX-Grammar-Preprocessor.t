@@ -75,6 +75,7 @@ BEGIN {
         $WAS_CALLED = 1;
         my $source_ref = $self->source_ref;
         Test::More::is $$source_ref, EXPECTED_SOURCE, 'got the expected input source';
+        return;
     }
 
     sub result {
@@ -84,7 +85,7 @@ BEGIN {
 
     sub _factory {
         my (undef, $source_ref, %args) = @_;
-        __PACKAGE__->new(
+        return __PACKAGE__->new(
             source_ref => $source_ref,
             %args,
         );
@@ -124,6 +125,13 @@ describe preprocess => sub {
     it 'dies when not invoked on an object' => sub {
         throws_ok { MarpaX::Grammar::Preprocessor->preprocess('foo bar') }
             qr/\A\Qexpected MarpaX::Grammar::Preprocessor instance in call to preprocess()\E/;
+    };
+
+    it 'dies when input wasn\'t fully consumed' => sub {
+        my $self = THE_CLASS->new;
+
+        throws_ok { $self->preprocess('foo } bar') }
+            qr/\A\QUnexpected closing brace\E\b/;
     };
 };
 

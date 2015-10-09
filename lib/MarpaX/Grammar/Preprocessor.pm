@@ -338,7 +338,11 @@ sub preprocess {
     my $parser_factory = $self->_MarpaX_Grammar_Preprocessor_parser_factory;
     my $parser = $parser_factory->($self, \$source);
 
-    $parser->pump;
+    if (my ($type, $value) = $parser->pump) {
+        # uncoverable branch false
+        _::croak "Unexpected closing brace" if $type eq 'CLOSE';
+        _::croak "Unexpected token $type($value)"; # uncoverable statement
+    }
 
     return $parser->result;
 }

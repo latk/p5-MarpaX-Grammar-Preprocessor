@@ -131,6 +131,46 @@ sub parser_fixture {
     };
 }
 
+sub test_simple_macro_substitution {
+    my (%args) = @_;
+    my $method = delete $args{method} // die "expected named argument method";
+    my $message = delete $args{message} // 'got SLIF snippet';
+
+    my $main_test;
+    if (my $regex = delete $args{throws_ok}) {
+        $message //= $regex;
+        $main_test = sub {
+            my ($parser) = @_;
+            throws_ok { $parser->$method } $regex, $message;
+        };
+    }
+    elsif (my $expected = delete $args{expected})
+    {
+        $message //= 'got SLIF snippet';
+        $main_test = sub {
+            my ($parser) = @_;
+            my @result = $parser->$method;
+            is_deeply \@result, $expected, $message;
+        };
+    }
+    else {
+        die "expected named argument expected or throws_ok";
+    }
+
+    exists $args{test} and die "named argument test cannot be used in test_simple_macro_substitution";
+
+    return parser_fixture
+        %args,
+        test => sub {
+            my ($parser) = @_;
+
+            my $source_ref = $parser->_MarpaX_Grammar_Preprocessor_Parser_source_ref;
+            for ($source_ref ? $$source_ref : undef) {
+                $main_test->($parser);
+            }
+        };
+}
+
 describe result => sub {
     it 'returns a Result instance' => parser_fixture
         source_ref => undef,
@@ -536,6 +576,17 @@ describe next_token => sub {
             is_deeply \@result, [IDENT => 'the_name'], 'inline rule returns its identifier';
         };
 
+    it 'throws when inline rules aren\'t properly terminated' => parser_fixture
+        input => q({ the_name bleh),
+        input_after => '',
+        buffers => ['a', 'b'],
+        test => sub {
+            my ($parser) = @_;
+
+            throws_ok { $parser->next_token }
+                qr/\A\QExpecting closing brace for inline rule, but got EOF\E\b/;
+        };
+
     it 'returns close tokens' => parser_fixture
         input => '}',
         buffers => ['a', 'b'],
@@ -594,8 +645,10 @@ BEGIN {
 
     sub next_token {
         my ($self) = @_;
-        my $pair = shift @{ $self->mock_tokens };
-        return if not $pair;
+        my $mock_tokens = $self->mock_tokens;
+        return if not @$mock_tokens;
+        return if not $mock_tokens->[0];
+        my $pair = shift @$mock_tokens;
         my ($type, $value) = (ref $pair eq ref sub{}) ? $pair->() : @$pair;
         $type = MarpaX::Grammar::Preprocessor::TokenType->coerce($type);
         return $type, $value;
@@ -603,7 +656,8 @@ BEGIN {
 }
 
 describe pump => sub {
-    it 'consumes the whole input' => parser_fixture
+    it 'consumes the whole input' => test_simple_macro_substitution
+        method => 'pump',
         source_ref => undef,
         class => 'Local::Parser::MockNextToken',
         ctor_args => {
@@ -615,13 +669,30 @@ describe pump => sub {
                 sub { die "should never be called" },
             ],
         },
+        expected => [],
+        message => 'returned empty list',
         buffers => ['prelude:', undef],
         buffers_expected => ['prelude:abc', undef],
-        buffers_message => 'input was consumed',
-        test => sub {
-            my ($parser) = @_;
-            $parser->pump;
-        };
+        buffers_message => 'input was consumed';
+
+    it 'can terminate on CLOSE tokens' => test_simple_macro_substitution
+        method => 'pump',
+        source_ref => undef,
+        class => 'Local::Parser::MockNextToken',
+        ctor_args => {
+            mock_tokens => [
+                [OP => 'a'],
+                [LITERAL => 'b'],
+                [IDENT => 'c'],
+                [CLOSE => undef],
+                sub { die "should never be called" },
+            ],
+        },
+        expected => [CLOSE => undef],
+        message => 'returned CLOSE token',
+        buffers => ['prelude:', undef],
+        buffers_expected => ['prelude:abc', undef],
+        buffers_message => 'input was consumed';
 };
 
 describe expect => sub {
@@ -675,46 +746,6 @@ describe expect => sub {
             qr/\A\Qexpected {LITERAL, OP} but reached end of input\E\b/;
         };
 };
-
-sub test_simple_macro_substitution {
-    my (%args) = @_;
-    my $method = delete $args{method} // die "expected named argument method";
-    my $message = delete $args{message} // 'got SLIF snippet';
-
-    my $main_test;
-    if (my $regex = delete $args{throws_ok}) {
-        $message //= $regex;
-        $main_test = sub {
-            my ($parser) = @_;
-            throws_ok { $parser->$method } $regex, $message;
-        };
-    }
-    elsif (my $expected = delete $args{expected})
-    {
-        $message //= 'got SLIF snippet';
-        $main_test = sub {
-            my ($parser) = @_;
-            my @result = $parser->$method;
-            is_deeply \@result, $expected, $message;
-        };
-    }
-    else {
-        die "expected named argument expected or throws_ok";
-    }
-
-    exists $args{test} and die "named argument test cannot be used in test_simple_macro_substitution";
-
-    return parser_fixture
-        %args,
-        test => sub {
-            my ($parser) = @_;
-
-            my $source_ref = $parser->_MarpaX_Grammar_Preprocessor_Parser_source_ref;
-            for ($source_ref ? $$source_ref : undef) {
-                $main_test->($parser);
-            }
-        };
-}
 
 describe command_array => test_simple_macro_substitution
     method => 'command_array',
