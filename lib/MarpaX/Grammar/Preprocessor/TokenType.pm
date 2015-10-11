@@ -192,6 +192,10 @@ The TokenType for closing scopes.
 
 This token signals that an inline rule is coming to an end.
 
+=head2 EOF
+
+Indicates the end of input.
+
 =cut
 
 # initialize the pre-defined token types
@@ -199,5 +203,6 @@ __PACKAGE__->new('IDENT');
 __PACKAGE__->new('LITERAL');
 __PACKAGE__->new('OP');
 __PACKAGE__->new('CLOSE');
+__PACKAGE__->new('EOF');
 
 1;

@@ -75,7 +75,7 @@ BEGIN {
         $WAS_CALLED = 1;
         my $source_ref = $self->source_ref;
         Test::More::is $$source_ref, EXPECTED_SOURCE, 'got the expected input source';
-        return;
+        return MarpaX::Grammar::Preprocessor->EOF;
     }
 
     sub result {
@@ -131,7 +131,7 @@ describe preprocess => sub {
         my $self = THE_CLASS->new;
 
         throws_ok { $self->preprocess('foo } bar') }
-            qr/\A\QUnexpected closing brace\E\b/;
+            qr/\A\QUnexpected token CLOSE\E\b/;
     };
 };
 

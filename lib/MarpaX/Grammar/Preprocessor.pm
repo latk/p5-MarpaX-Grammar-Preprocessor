@@ -338,11 +338,7 @@ sub preprocess {
     my $parser_factory = $self->_MarpaX_Grammar_Preprocessor_parser_factory;
     my $parser = $parser_factory->($self, \$source);
 
-    if (my ($type, $value) = $parser->pump) {
-        # uncoverable branch false
-        _::croak "Unexpected closing brace" if $type eq 'CLOSE';
-        _::croak "Unexpected token $type($value)"; # uncoverable statement
-    }
+    my ($type, $value) = $parser->pump('EOF');
 
     return $parser->result;
 }
@@ -355,6 +351,7 @@ sub preprocess {
     $self->LITERAL;
     $self->OP;
     $self->CLOSE;
+    $self->EOF;
 
 C<TOKEN_TYPE> names the L<TokenType|MarpaX::Grammar::Preprocessor::TokenType> class
 that models the various token types in an extended SLIF grammar.

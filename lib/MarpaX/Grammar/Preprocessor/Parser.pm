@@ -25,6 +25,7 @@ my $TT_IDENT = $TOKEN_TYPE->coerce('IDENT');
 my $TT_LITERAL = $TOKEN_TYPE->coerce('LITERAL');
 my $TT_OP = $TOKEN_TYPE->coerce('OP');
 my $TT_CLOSE = $TOKEN_TYPE->coerce('CLOSE');
+my $TT_EOF = $TOKEN_TYPE->coerce('EOF');
 
 =head1 SYNOPSIS
 
@@ -300,47 +301,60 @@ sub write_deferred {
 
 =head2 pump
 
-    $parser->pump
+    ($type, $value) = $parser->pump(@terminating_types)
 
-poll for tokens until the source is exhausted.
+poll for tokens until a C<@terminating_types> token is found.
 Token values are appended to the currently selected buffer.
-
-The pump terminates when the end of the input is reached,
-or a C<CLOSE> token.
 
 This method is called by parser clients to drive the parser through the input.
 
-B<Returns> nothing.
+B<@terminating_types>: list of L<TokenType|MarpaX::Grammar::Preprocessor::TokenType>
+
+the tokens upon which you want to terminate pumping.
+
+B<Returns> the C<($type, $value)> pair of the terminating token.
+This token is not written to the buffer.
 
 B<Throws> if C<next_token()> throws at any point.
+Also throws when a terminator token was found that cannot be written to the buffer.
+Such terminator tokens are C<EOF> and C<CLOSE>.
+If you want to terminate pumping on such a token,
+you must explicitly list it in the C<@terminating_types>.
 
 B<Example>:
 
-    my $source = ...;
-    my $parser = MarpaX::Grammar::Preprocessor::Parser->new(
-        source_ref => \$source,
-        buffers => [''],
-    );
-    $parser->pump;
+    my $parser = ...
+    $parser->pump('EOF');
     my $result = $parser->result;
 
 =cut
 
 sub pump {
-    my ($self) = @_;
+    my ($self, @terminating_types) = @_;
+    if (not @terminating_types) {
+        _::croak "pump() requires at least one terminating type";
+    }
+    my %terminating_types = map { $TOKEN_TYPE->coerce($_) => undef } @terminating_types;
 
     # pump the whole source through the preprocessor
-    while (my ($type, $value) = $self->next_token) {
-        return ($type, $value) if $type == $TT_CLOSE;
+    while (1) {
+        my ($type, $value) = $self->next_token
+            or _::croak "next_token() in pump() didn't return a token";
+        return ($type, $value) if exists $terminating_types{$type};
+
+        # if the token is not a requested terminator,
+        # but can't be printed because it would usually be a terminator,
+        # then throw an error.
+        _::croakf q(Unexpected token %s(%s)), $type, _::pp $value
+            if _::any { $type eq $_ } qw/EOF CLOSE/;
+
         $self->write($value);
     }
-
-    return;
 }
 
 =head2 next_token
 
-    my ($type, $value) = $parser->next_token;
+    ($type, $value) = $parser->next_token;
 
 Retrieve the next token from the input, applying special commands as needed.
 
@@ -355,7 +369,7 @@ B<Returns> a two-value list:
 B<$type> is the L<TokenType|MarpaX::Grammar::Preprocessor::TokenType> of the found token.
 B<$value> is the arbitrary value of the token,
 which in general would be a string.
-When the end of the input is encountered, it returns an empty list.
+When the end of the input is encountered, it returns an C<EOF> token.
 
 B<Throws> on illegal syntax.
 
@@ -365,8 +379,9 @@ though new behaviour might be added in a backwards-compatible manner.
 
 B<Example:>
 
-    while (my ($type, $value) = $self->next_token) {
-        last if $type == 'CLOSE';
+    while (1) {
+        my ($type, $value) = $self->next_token
+        last if $type == 'CLOSE' or $type == 'EOF';
         die "Expected IDENT" if not $type == 'IDENT';
         do_something_with($value);
     }
@@ -449,11 +464,8 @@ sub next_token {
 
                 # pump the whole inline rule into the deferred buffer
                 # Throw if the inline rule wasn't terminated via a CLOSE brace.
-                my ($type, $value) = $scoped->pump
-                    or _::croak "Expecting closing brace for inline rule, but got EOF";
-                # uncoverable branch true
+                my ($type, $value) = $scoped->pump($TT_EOF, $TT_CLOSE);
                 if ($type != $TT_CLOSE) {
-                    # uncoverable statement
                     _::croak "Expecting closing brace for inline rule, but got $type";
                 }
 
@@ -484,7 +496,7 @@ sub next_token {
                 _::pp $source_around_here;
         }
 
-        return; # at end of input, return empty list
+        return $TT_EOF, undef;
     }
 }
 
@@ -524,9 +536,7 @@ B<Example:>
 
 sub expect {
     my ($self, @expected) = @_;
-    my ($type, $value) = $self->next_token
-        or _::croakf "expected {%s} but reached end of input",
-            join ', ', @expected;
+    my ($type, $value) = $self->next_token;
     return $value if _::any { $type == $_ } @expected;
     _::croakf "expected {%s} but found %s",
         (join ', ', @expected), $type;

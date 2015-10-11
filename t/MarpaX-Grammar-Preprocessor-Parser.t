@@ -134,6 +134,7 @@ sub parser_fixture {
 sub test_simple_macro_substitution {
     my (%args) = @_;
     my $method = delete $args{method} // die "expected named argument method";
+    my $method_args = delete $args{method_args} // [];
     my $message = delete $args{message} // 'got SLIF snippet';
 
     my $main_test;
@@ -141,7 +142,7 @@ sub test_simple_macro_substitution {
         $message //= $regex;
         $main_test = sub {
             my ($parser) = @_;
-            throws_ok { $parser->$method } $regex, $message;
+            throws_ok { $parser->$method(@$method_args) } $regex, $message;
         };
     }
     elsif (my $expected = delete $args{expected})
@@ -149,7 +150,7 @@ sub test_simple_macro_substitution {
         $message //= 'got SLIF snippet';
         $main_test = sub {
             my ($parser) = @_;
-            my @result = $parser->$method;
+            my @result = $parser->$method(@$method_args);
             is_deeply \@result, $expected, $message;
         };
     }
@@ -351,7 +352,7 @@ describe write_deferred => sub {
 };
 
 describe next_token => sub {
-    it 'returns empty and the end of input' => sub {
+    it 'returns EOF and the end of input' => sub {
         case 'empty string' => parser_fixture
             input_before => '',
             input => '',
@@ -362,7 +363,7 @@ describe next_token => sub {
 
                 my @result = $parser->next_token;
 
-                is_deeply \@result, [], 'returned empty';
+                is_deeply \@result, [EOF => undef], 'returned EOF token';
             };
 
         case 'end of string' => parser_fixture
@@ -374,7 +375,7 @@ describe next_token => sub {
 
                 my @result = $parser->next_token;
 
-                is_deeply \@result, [], 'returned empty';
+                is_deeply \@result, [EOF => undef], 'returned EOF token';
             };
     };
 
@@ -392,7 +393,7 @@ describe next_token => sub {
         my $case = sub {
             my ($whitespace) = @_;
 
-            case 'before end of input' => parser_fixture
+            case 'before EOF' => parser_fixture
                 input => $whitespace,
                 input_after => '',
                 buffers => ['a', 'b'],
@@ -403,7 +404,7 @@ describe next_token => sub {
 
                     my @result = $parser->next_token;
 
-                    is_deeply \@result, [], 'next token was end of input';
+                    is_deeply \@result, [EOF => undef], 'next token was EOF';
                 };
 
             case 'before IDENT' => parser_fixture
@@ -646,8 +647,8 @@ BEGIN {
     sub next_token {
         my ($self) = @_;
         my $mock_tokens = $self->mock_tokens;
-        return if not @$mock_tokens;
-        return if not $mock_tokens->[0];
+        return MarpaX::Grammar::Preprocessor::TokenType->coerce('EOF') if not @$mock_tokens;
+        return MarpaX::Grammar::Preprocessor::TokenType->coerce('EOF') if not $mock_tokens->[0];
         my $pair = shift @$mock_tokens;
         my ($type, $value) = (ref $pair eq ref sub{}) ? $pair->() : @$pair;
         $type = MarpaX::Grammar::Preprocessor::TokenType->coerce($type);
@@ -658,6 +659,7 @@ BEGIN {
 describe pump => sub {
     it 'consumes the whole input' => test_simple_macro_substitution
         method => 'pump',
+        method_args => ['EOF'],
         source_ref => undef,
         class => 'Local::Parser::MockNextToken',
         ctor_args => {
@@ -669,7 +671,7 @@ describe pump => sub {
                 sub { die "should never be called" },
             ],
         },
-        expected => [],
+        expected => [EOF => undef],
         message => 'returned empty list',
         buffers => ['prelude:', undef],
         buffers_expected => ['prelude:abc', undef],
@@ -677,6 +679,7 @@ describe pump => sub {
 
     it 'can terminate on CLOSE tokens' => test_simple_macro_substitution
         method => 'pump',
+        method_args => ['CLOSE'],
         source_ref => undef,
         class => 'Local::Parser::MockNextToken',
         ctor_args => {
@@ -743,7 +746,7 @@ describe expect => sub {
             my ($parser) = @_;
 
             throws_ok { $parser->expect(qw/LITERAL OP/) }
-            qr/\A\Qexpected {LITERAL, OP} but reached end of input\E\b/;
+            qr/\A\Qexpected {LITERAL, OP} but found EOF\E\b/;
         };
 };
 
