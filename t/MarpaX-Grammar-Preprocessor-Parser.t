@@ -45,107 +45,83 @@ sub case {
     return $__subtest->("case $name", $body);
 }
 
-sub parser_fixture {
-    my (%args) = @_;
-    my %fixture;
+sub _fixture_handle_source_ref {
+    my ($args, $fixture) = @_;
 
-    my $test = delete $args{test} // die "argument test required";
-
-    my $source_ref;
-    my $source_ref_explicit = exists $args{source_ref};
-    my $pos_expected;
-    my $pos_message;
-    if ($source_ref_explicit) {
-        $source_ref = delete $args{source_ref};
-    }
-    else {
-        my $input_before = delete $args{input_before} // '****';
-        my $input_middle = delete $args{input} // die "argument input required";
-        my $input_after  = delete $args{input_after} // '****';
-        my $input = $input_before . $input_middle . $input_after;
-
-        my $pos = length $input_before;
-        $pos_expected = $pos + (delete $args{pos_expected} // length $input_middle);
-
-        $pos_message = delete $args{pos_message} // do {
-            'match position ' . ((length $input_middle) ? 'advanced' : 'unchanged');
-        };
-
-        pos($input) = $pos;
-        $source_ref = \$input;
-
-        $fixture{pos} = $pos;
+    if (exists $args->{source_ref}) {
+        my $source_ref = delete $args->{source_ref};
+        my $postcondition = undef;
+        return ($source_ref, $postcondition);
     }
 
-    my $buffers = delete $args{buffers} // die "argument buffers required";
+    my $input_before = delete $args->{input_before} // '****';
+    my $input_middle = delete $args->{input} // die "argument input required";
+    my $input_after  = delete $args->{input_after} // '****';
+    my $input = $input_before . $input_middle . $input_after;
+
+    my $pos = length $input_before;
+    my $pos_expected = $pos + (delete $args->{pos_expected} // length $input_middle);
+
+    my $pos_message = delete $args->{pos_message} // do {
+        'match position ' . ((length $input_middle) ? 'advanced' : 'unchanged');
+    };
+
+    pos($input) = $pos;
+    my $source_ref = \$input;
+
+    $fixture->{pos} = $pos;
+
+    my $postcondition = sub {
+        is pos($$source_ref), $pos_expected, $pos_message;
+    };
+
+    return ($source_ref, $postcondition);
+}
+
+sub _fixture_handle_buffers {
+    my ($args, $fixture) = @_;
+
+    my $buffers = delete $args->{buffers} // die "argument buffers required";
     if (@$buffers != 2) {
         die "argument buffers requires an arrayref of exactly two buffers";
     }
     my $buffers_unchanged = 0;
-    my $buffers_expected = delete $args{buffers_expected} // do {
+    my $buffers_expected = delete $args->{buffers_expected} // do {
         $buffers_unchanged = 1;
         [@$buffers]
     };
-    my $buffers_message = delete $args{buffers_message} // do {
+    my $buffers_message = delete $args->{buffers_message} // do {
         die "argument buffers_message required" if not $buffers_unchanged;
         'buffers are unchanged';
     };
-
-    my $class = delete $args{class} // THE_CLASS;
-
-    my $ctor_args = delete $args{ctor_args} // {};
-
-    my $postcondition = delete $args{postcondition};
-
-    my $real_postcondition = sub {
+    my $postcondition = sub {
         my ($parser) = @_;
         my $buffers = [
             ${ $parser->_MarpaX_Grammar_Preprocessor_Parser_buffer },
             ${ $parser->_MarpaX_Grammar_Preprocessor_Parser_buffer_deferred },
         ];
         is_deeply $buffers, $buffers_expected, $buffers_message;
-        is pos($$source_ref), $pos_expected, $pos_message
-            if not $source_ref_explicit;
-        $postcondition->($parser)
-            if $postcondition;
     };
 
-    if (my @keys = sort keys %args) {
-        die "Unknown named arguments: @keys, died";
-    }
-
-
-    return sub {
-        my ($buffer_main, $buffer_deferred) = @$buffers;
-        my $parser = $class->new(
-            source_ref => $source_ref,
-            buffer => \$buffer_main,
-            buffer_deferred => \$buffer_deferred,
-            %$ctor_args,
-        );
-
-        $test->($parser, \%fixture);
-
-        $real_postcondition->($parser);
-        return;
-    };
+    return ($buffers, $postcondition);
 }
 
-sub test_simple_macro_substitution {
-    my (%args) = @_;
-    my $method = delete $args{method} // die "expected named argument method";
-    my $method_args = delete $args{method_args} // [];
-    my $message = delete $args{message} // 'got SLIF snippet';
+sub _fixture_handle_method {
+    my ($args, $fixture) = @_;
+
+    my $method = delete $args->{method} // return;
+    my $method_args = delete $args->{method_args} // [];
+    my $message = delete $args->{message} // 'got SLIF snippet';
 
     my $main_test;
-    if (my $regex = delete $args{throws_ok}) {
+    if (my $regex = delete $args->{throws_ok}) {
         $message //= $regex;
         $main_test = sub {
             my ($parser) = @_;
             throws_ok { $parser->$method(@$method_args) } $regex, $message;
         };
     }
-    elsif (my $expected = delete $args{expected})
+    elsif (my $expected = delete $args->{expected})
     {
         $message //= 'got SLIF snippet';
         $main_test = sub {
@@ -158,18 +134,62 @@ sub test_simple_macro_substitution {
         die "expected named argument expected or throws_ok";
     }
 
-    exists $args{test} and die "named argument test cannot be used in test_simple_macro_substitution";
+    exists $args->{test} and die "named argument test cannot be used in parser_fixture";
 
-    return parser_fixture
-        %args,
-        test => sub {
-            my ($parser) = @_;
+    $args->{test} = sub {
+        my ($parser) = @_;
 
-            my $source_ref = $parser->_MarpaX_Grammar_Preprocessor_Parser_source_ref;
-            for ($source_ref ? $$source_ref : undef) {
-                $main_test->($parser);
-            }
-        };
+        my $source_ref = $parser->_MarpaX_Grammar_Preprocessor_Parser_source_ref;
+        for ($source_ref ? $$source_ref : undef) {
+            $main_test->($parser);
+        }
+    };
+
+    return;
+}
+
+sub parser_fixture {
+    my (%args) = @_;
+    my %fixture;
+
+    _fixture_handle_method(\%args, \%fixture);
+
+    my $test = delete $args{test} // die "argument test required";
+
+    my ($source_ref, $source_ref_postcondition) =
+        _fixture_handle_source_ref(\%args, \%fixture);
+
+    my ($buffers, $buffers_postcondition) =
+        _fixture_handle_buffers(\%args, \%fixture);
+
+    my $class = delete $args{class} // THE_CLASS;
+
+    my $ctor_args = delete $args{ctor_args} // {};
+
+    my $postcondition = delete $args{postcondition};
+
+    if (my @keys = sort keys %args) {
+        die "Unknown named arguments: @keys, died";
+    }
+
+    return sub {
+        my ($buffer_main, $buffer_deferred) = @$buffers;
+        my $parser = $class->new(
+            source_ref => $source_ref,
+            buffer => \$buffer_main,
+            buffer_deferred => \$buffer_deferred,
+            %$ctor_args,
+        );
+
+        $test->($parser, \%fixture);
+
+        $_->($parser) for grep { $_ }
+            $buffers_postcondition,
+            $source_ref_postcondition,
+            $postcondition;
+
+        return;
+    };
 }
 
 describe result => sub {
@@ -507,8 +527,8 @@ describe next_token => sub {
         };
 
     it 'dispatches docstrings to doc command' => parser_fixture
-        input => '"""',
-        pos_expected => 0,
+        input => '',
+        input_after => '"""****',
         buffers => ['a', 'b'],
         test => sub {
             my ($parser, $fixture) = @_;
@@ -639,6 +659,8 @@ BEGIN {
     use Moo;
     extends 'MarpaX::Grammar::Preprocessor::Parser';
 
+    my $coerce = sub { MarpaX::Grammar::Preprocessor::TokenType->coerce(@_) };
+
     has mock_tokens => (
         is => 'ro',
         required => 1,
@@ -647,17 +669,16 @@ BEGIN {
     sub next_token {
         my ($self) = @_;
         my $mock_tokens = $self->mock_tokens;
-        return MarpaX::Grammar::Preprocessor::TokenType->coerce('EOF') if not @$mock_tokens;
-        return MarpaX::Grammar::Preprocessor::TokenType->coerce('EOF') if not $mock_tokens->[0];
+        return $coerce->('EOF'), undef if not @$mock_tokens;
+        return $coerce->('EOF'), undef if not $mock_tokens->[0];
         my $pair = shift @$mock_tokens;
         my ($type, $value) = (ref $pair eq ref sub{}) ? $pair->() : @$pair;
-        $type = MarpaX::Grammar::Preprocessor::TokenType->coerce($type);
-        return $type, $value;
+        return $coerce->($type), $value;
     }
 }
 
 describe pump => sub {
-    it 'consumes the whole input' => test_simple_macro_substitution
+    it 'consumes the whole input' => parser_fixture
         method => 'pump',
         method_args => ['EOF'],
         source_ref => undef,
@@ -677,7 +698,7 @@ describe pump => sub {
         buffers_expected => ['prelude:abc', undef],
         buffers_message => 'input was consumed';
 
-    it 'can terminate on CLOSE tokens' => test_simple_macro_substitution
+    it 'can terminate on CLOSE tokens' => parser_fixture
         method => 'pump',
         method_args => ['CLOSE'],
         source_ref => undef,
@@ -750,50 +771,50 @@ describe expect => sub {
         };
 };
 
-describe command_array => test_simple_macro_substitution
+describe command_array => parser_fixture
     method => 'command_array',
     source_ref => undef,
     expected => [OP => 'action => ::array'],
     buffers => ['a', 'b'];
 
-describe command_null => test_simple_macro_substitution
+describe command_null => parser_fixture
     method => 'command_null',
     source_ref => undef,
     expected => [OP => 'action => ::undef'],
     buffers => ['a', 'b'];
 
-describe command_group => test_simple_macro_substitution
+describe command_group => parser_fixture
     method => 'command_group',
     source_ref => undef,
     expected => [OP => 'assoc => group'],
     buffers => ['a', 'b'];
 
-describe command_left => test_simple_macro_substitution
+describe command_left => parser_fixture
     method => 'command_left',
     source_ref => undef,
     expected => [OP => 'assoc => left'],
     buffers => ['a', 'b'];
 
-describe command_right => test_simple_macro_substitution
+describe command_right => parser_fixture
     method => 'command_right',
     source_ref => undef,
     expected => [OP => 'assoc => right'],
     buffers => ['a', 'b'];
 
-describe command_lax => test_simple_macro_substitution
+describe command_lax => parser_fixture
     method => 'command_lax',
     source_ref => undef,
     expected => [OP => 'proper => 0'],
     buffers => ['a', 'b'];
 
 describe command_do => sub {
-    it 'parses the action name' => test_simple_macro_substitution
+    it 'parses the action name' => parser_fixture
         method => 'command_do',
         input => ' FooBar',
         expected => [OP => 'action => do_FooBar'],
         buffers => ['a', 'b'];
 
-    it 'dies when no action name could be found' => test_simple_macro_substitution
+    it 'dies when no action name could be found' => parser_fixture
         method => 'command_do',
         input => '',
         input_after => ' %glorp',
@@ -801,7 +822,7 @@ describe command_do => sub {
         buffers => ['a', 'b'];
 };
 
-describe command_sep => test_simple_macro_substitution
+describe command_sep => parser_fixture
     method => 'command_sep',
     source_ref => undef,
     class => 'Local::Parser::MockNextToken',
@@ -814,7 +835,7 @@ describe command_sep => test_simple_macro_substitution
     expected => [OP => 'separator => some_identifier'],
     buffers => ['a', 'b'];
 
-describe command_keyword => test_simple_macro_substitution
+describe command_keyword => parser_fixture
     method => 'command_keyword',
     source_ref => undef,
     class => 'Local::Parser::MockNextToken',
@@ -822,7 +843,7 @@ describe command_keyword => test_simple_macro_substitution
         mock_tokens => [
             [IDENT => 'some_identifier'],
             sub { die "should never be seen" },
-        ]
+        ],
     },
     expected => [IDENT => 'some_identifier'],
     message => 'passes through identifier',
@@ -850,7 +871,7 @@ describe command_namespace => test_simple_macro_substitution
     };
 
 describe command_doc => sub {
-    it 'can parse multiline docstrings' => test_simple_macro_substitution
+    it 'can parse multiline docstrings' => parser_fixture
         method => 'command_doc',
         input =>
             qq( """ foo\n) .
@@ -878,7 +899,7 @@ describe command_doc => sub {
             is_deeply $docs, $expected_docs, 'stored documentation matches';
         };
 
-    it 'can hide symbols' => test_simple_macro_substitution
+    it 'can hide symbols' => parser_fixture
         method => 'command_doc',
         input => 'hide',
         class => 'Local::Parser::MockNextToken',
@@ -902,7 +923,7 @@ describe command_doc => sub {
             is_deeply $docs, $expected_docs, 'stored documentation matches';
         };
 
-    it 'throws on illegal syntax' => test_simple_macro_substitution
+    it 'throws on illegal syntax' => parser_fixture
         method => 'command_doc',
         input => '',
         input_after => 'florp6789012345678901',
@@ -924,7 +945,7 @@ describe command_doc => sub {
             is_deeply $docs, $expected_docs, 'stored documentation matches';
         };
 
-    it 'throws when symbol was already defined' => test_simple_macro_substitution
+    it 'throws when symbol was already defined' => parser_fixture
         method => 'command_doc',
         input => 'hide',
         class => 'Local::Parser::MockNextToken',
@@ -948,7 +969,7 @@ describe command_doc => sub {
 };
 
 describe command_optional => sub {
-    it 'generates optional rules' => test_simple_macro_substitution
+    it 'generates optional rules' => parser_fixture
         method => 'command_optional',
         source_ref => undef,
         class => 'Local::Parser::MockNextToken',
@@ -964,7 +985,7 @@ describe command_optional => sub {
         buffers_expected => ['a;', 'b;some_identifier__Optional ::= action => ::undef; some_identifier__Optional ::= some_identifier action => ::first; '],
         buffers_message => 'optional rule was written to deferred buffer';
 
-    it 'caches optional rules' => test_simple_macro_substitution
+    it 'caches optional rules' => parser_fixture
         method => 'command_optional',
         source_ref => undef,
         class => 'Local::Parser::MockNextToken',
