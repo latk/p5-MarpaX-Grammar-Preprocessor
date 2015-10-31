@@ -37,32 +37,37 @@ use version 0.77; our $VERSION = qv('v0.0_1');
     #   lexeme default = latm => 1
 
     # A namespace allows us to gensym names for %helper rules
-    \namespace Foo
-        ::= %BAR | %Baz
+    \namespace Foo {
+        % ::= %BAR | %Baz
         %BAR ~ 'bar'        # really Foo__BAR
         %Baz ::= %BAR %BAR  # really Foo__Baz
+    }
 
-    # The next namespace is totally unrelated.
-    \namespace Qux
-        ::= %BAR
+    # a different namespace
+    \namespace Qux {
+        % ::= %BAR
         %BAR ~ 'quxbar'     # really Qux__BAR
+    }
 
     # Associate a docstring with the next symbol.
-    # Docstrings can span multiple lines, all beginning with a triple quote.
-    """ a list of values. Examples:
-    """     []          (empty list)
-    """     [1, 2, 3]   (list with three integers)
-    \namespace List
-        ::= (LEFT_BRACKET) %Items (RIGHT_BRACKET)
+    \namespace List {
+        # Docstrings can span multiple lines, all beginning with a triple quote.
+        """ a list of values. Examples:
+        """     []          (empty list)
+        """     [1, 2, 3]   (list with three integers)
+        % ::= (LEFT_BRACKET) %Items (RIGHT_BRACKET)
+
         %Items ::= Value* \sep COMMA  # \sep expands to "separator => "
+    }
 
     # Use { curly braces } to specify an inline rule.
     # Inline rules still need a name.
     # \array expands to "action => ::array"
-    """ a key-value dictionary
-    \namespace Dict
-        ::= (LEFT_BRACE) { %Items ::= %KVItem* \sep COMMA \array } (RIGHT_BRACE)
+    \namespace Dict {
+        """ a key-value dictionary
+        % ::= (LEFT_BRACE) { %Items ::= %KVItem* \sep COMMA \array } (RIGHT_BRACE)
         %KVItem ::= Key (COLON) Value \array
+    }
 
     # Suppress documentation for any symbol.
     # Great for internal helper rules!
@@ -106,10 +111,11 @@ This makes it easy to have quasi-private names without too much typing.
 
 Example:
 
-    \namespace Term
+    \namespace Term {
         ::= % (%PLUS) Factor
 
         %PLUS ~ '+'
+    }
 
 Is transformed to:
 
@@ -118,7 +124,7 @@ Is transformed to:
 
 The namespace separator is currently set to double underscores,
 so you shouldn't use them in your identifiers
-(see also the stabilit policy section).
+(see also the stability policy section).
 
 =head2 Inline Rules
 
@@ -132,8 +138,9 @@ and defer the definition of the rule until a safe state is reached.
 
 Example:
 
-    \namespace List
+    \namespace List {
         ::= ('[') { %Items ::= Value* \sep COMMA \array } (']')
+    }
 
 Is transformed to:
 

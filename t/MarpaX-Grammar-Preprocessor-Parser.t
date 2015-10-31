@@ -270,7 +270,7 @@ describe new_with => sub {
         _::const my $new_namespace_separator => '::';
 
         my $copy = $orig->new_with(
-            _MarpaX_Grammar_Preprocessor_Parser_namespace => $new_namespace,
+            namespace => $new_namespace,
             namespace_separator => $new_namespace_separator,
         );
 
@@ -302,8 +302,7 @@ describe new_with => sub {
 
             around new_with => sub {
                 my ($orig, $self, %args) = @_;
-                return $orig->(
-                    $self,
+                return $self->$orig(
                     _custom_state => $self->_custom_state,
                     %args,
                 );
@@ -459,28 +458,36 @@ describe next_token => sub {
     it 'returns namespaced identifiers' => parser_fixture
         input => '%Foo',
         buffers => ['a', 'b'],
+        ctor_args => {
+            namespace => 'TheNamespace',
+        },
         test => sub {
             my ($parser) = @_;
-            my $namespace = 'TheNamespace';
-            $parser->_MarpaX_Grammar_Preprocessor_Parser_namespace($namespace);
-            my $namespace_separator = $parser->_MarpaX_Grammar_Preprocessor_Parser_namespace_separator;
+            is $parser->_MarpaX_Grammar_Preprocessor_Parser_namespace,
+                'TheNamespace',
+                'precondition: have namespace';
+            my $sep = $parser->_MarpaX_Grammar_Preprocessor_Parser_namespace_separator;
 
             my @result = $parser->next_token;
 
-            is_deeply \@result, [IDENT => "${namespace}${namespace_separator}Foo"], 'got namespaced ident';
+            is_deeply \@result, [IDENT => "TheNamespace${sep}Foo"], 'got namespaced ident';
         };
 
     it 'returns namespace references' => parser_fixture
         input => '%',
         buffers => ['a', 'b'],
+        ctor_args => {
+            namespace => 'TheNamespace',
+        },
         test => sub {
             my ($parser) = @_;
-            _::const my $namespace => 'TheNamespace';
-            $parser->_MarpaX_Grammar_Preprocessor_Parser_namespace($namespace);
+            is $parser->_MarpaX_Grammar_Preprocessor_Parser_namespace,
+                'TheNamespace',
+                'precondition: has namespace';
 
             my @result = $parser->next_token;
 
-            is_deeply \@result, [IDENT => $namespace], 'got the namespace';
+            is_deeply \@result, [IDENT => 'TheNamespace'], 'got the namespace';
         };
 
     it 'dies if no namespace was set' => parser_fixture
@@ -665,6 +672,14 @@ BEGIN {
         is => 'ro',
         required => 1,
     );
+
+    around new_with => sub {
+        my ($orig, $self, %args) = @_;
+        return $self->$orig(
+            mock_tokens => $self->mock_tokens,
+            %args,
+        );
+    };
 
     sub next_token {
         my ($self) = @_;
@@ -851,24 +866,44 @@ describe command_keyword => parser_fixture
     buffers_expected => ['a:lexeme ~ some_identifier priority => 1;', 'b'],
     buffers_message => 'appends keyword prioritization to immediate buffer';
 
-describe command_namespace => test_simple_macro_substitution
-    method => 'command_namespace',
-    source_ref => undef,
-    class => 'Local::Parser::MockNextToken',
-    ctor_args => {
-        mock_tokens => [
-            [IDENT => 'some_identifier'],
-            sub { die "should never be seen" },
-        ],
-    },
-    expected => [IDENT => 'some_identifier'],
-    message => 'passes through identifier',
-    buffers => ['a', 'b'],
-    postcondition => sub {
-        my ($parser) = @_;
-        my $ns = $parser->_MarpaX_Grammar_Preprocessor_Parser_namespace;
-        is $ns, 'some_identifier', 'namespace has been set';
-    };
+describe command_namespace => sub {
+    it 'expands to the body' => parser_fixture
+        method => 'command_namespace',
+        input => '{',
+        class => 'Local::Parser::MockNextToken',
+        ctor_args => {
+            mock_tokens => [
+                [IDENT => 'some_identifier'],
+                # [OPEN => '{'], matched from the input source_ref
+                [LITERAL => 'foo'],
+                [CLOSE => undef],
+                sub { die "should never be seen" },
+            ],
+        },
+        expected => [OP => 'foo'],
+        message => 'expands to body',
+        buffers => ['a', 'b'];
+
+    it 'uses the new namespace within the body' => parser_fixture
+        method => 'command_namespace',
+        input => 'Foo { % }',
+        ctor_args => {
+            namespace => 'Qux',
+        },
+        expected => [OP => ' Foo '],
+        message => 'namespace is set within the body',
+        buffers => ['a', 'b'];
+
+    it 'supports nested namespaces' => parser_fixture
+        method => 'command_namespace',
+        input => '%Foo { % %bar }',
+        ctor_args => {
+            namespace => 'Qux',
+        },
+        expected => [OP => ' Qux__Foo Qux__Foo__bar '],
+        message => 'namespaces can be nested',
+        buffers => ['a', 'b'];
+};
 
 describe command_doc => sub {
     it 'can parse multiline docstrings' => parser_fixture

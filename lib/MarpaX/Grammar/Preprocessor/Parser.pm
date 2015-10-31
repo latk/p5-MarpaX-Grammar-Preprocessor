@@ -55,8 +55,8 @@ my $TT_EOF = $TOKEN_TYPE->coerce('EOF');
     $parser = MarpaX::Grammar::Preprocessor::Parser->new(
         source_ref => \$string,
         buffer => do { my $buffer = $prelude; \$buffer },
-        buffer_deferred = do { my $buffer = ''; \$buffer },
-        buffers => [$prelude],
+        buffer_deferred = do { my $buffer = '; '; \$buffer },
+        namespace => undef,
         namespace_separator => '__',
     );
 
@@ -79,6 +79,9 @@ C<do { my $buffer = $initial; \$buffer }>
 rather than passing a reference to a variable
 C<\$initial>.
 
+B<namespace>: string
+
+The starting namespace of this parser, defaults to C<undef>.
 
 B<namespace_separator>: string
 
@@ -113,7 +116,7 @@ my $attribute = sub {
 # the currently active namespace, or undef if no namespace is set
 my $_namespace = $attribute->(
     _MarpaX_Grammar_Preprocessor_Parser_namespace =>
-    is => 'rw',
+    init_arg => 'namespace',
     default => sub { undef },
 );
 
@@ -166,6 +169,37 @@ my $_optional_rule_cache = $attribute->(
 ################################################################################
 
 =head2 METHODS
+
+=cut
+
+my $report_error = sub {
+    my ($source_ref, $pos, @message) = @_;
+    _::alias my $source = $$source_ref;
+
+    # find the line start, and skip that newline.
+    # If no line beginning is found, we are on the first line.
+    # Since rindex returns -1 on failure, position 1 is correct.
+    my $line_start = 1 + rindex $source, "\n", $pos;
+    my $line_end = index $source, "\n", $pos;
+    $line_end = length($source) - 1 if $line_end < 0;
+    my $line_length = $line_end - $line_start + 1;
+    my $line_contents = substr $source, $line_start, $line_length;
+
+    my $line_ptr = q( ) x ($pos - $line_start) . '^--';
+
+    my $context_seen = substr $source, _::max($pos - 20, 0), _::min(20, $pos);
+    my $context_next = substr $source, $pos, 20;
+
+    @_ = (
+        @message, "\n",
+        "after: ", _::pp($context_seen), "\n",
+        "before: ", _::pp($context_next), "\n",
+        "on line:\n",
+        "$line_contents\n",
+        "$line_ptr\n ",
+    );
+    goto &CORE::die;
+};
 
 =head2 result
 
@@ -345,8 +379,16 @@ sub pump {
         # if the token is not a requested terminator,
         # but can't be printed because it would usually be a terminator,
         # then throw an error.
-        _::croakf q(Unexpected token %s(%s)), $type, _::pp $value
-            if _::any { $type eq $_ } qw/EOF CLOSE/;
+        if (_::any { $type eq $_ } qw/EOF CLOSE/) {
+            $report_error->(
+                $self->$_source_ref,
+                pos(${ $self->$_source_ref }),
+                sprintf 'Unexpected token %s(%s), expected %s',
+                    $type,
+                    _::pp($value),
+                    "@terminating_types",
+            );
+        }
 
         $self->write($value);
     }
@@ -391,8 +433,6 @@ B<Example:>
 sub next_token {
     my ($self) = @_;
 
-    my $NAMESPACE_SEPARATOR = $self->$_namespace_separator;
-
     my $source_ref = $self->$_source_ref;
 
     for ($$source_ref) {
@@ -424,8 +464,9 @@ sub next_token {
                 my $ns = $self->$_namespace
                     // _::croak q(No namespace was set);
 
+                my $sep = $self->$_namespace_separator;
                 if (m/\G( \w+ )/gc) {
-                    return $TT_IDENT, "${ns}${NAMESPACE_SEPARATOR}${1}";
+                    return $TT_IDENT, "${ns}${sep}${1}";
                 }
                 else {
                     return $TT_IDENT, $ns;
@@ -715,34 +756,51 @@ sub command_keyword {
 =for Pod::Coverage
     command_namespace
 
-    \namespace IDENT
+    \namespace IDENT { BODY... }
 
-Set the current namespace context,
-so that it can be used for C<%> namespace references
-or C<%name> internal rules.
+Processes the C<BODY> in the C<IDENT> namespace.
+
+Inside the C<BODY>, all C<%name> internal rules are prefixed with C<IDENT>,
+and all C<%> namespace references expand to the C<IDENT>.
+
+Namespaces can be nested.
 
 B<IDENT>
 is an C<IDENT> token.
 
-B<Expands to> the C<IDENT> token,
+B<BODY>
+is an arbitrary grammar fragment.
+
+B<Expands to> the preprocessed C<BODY>.
 
 B<Example:>
 
-    \namespace Expression
-        ::= % ('+') % \do Addition
-        ||  ...
+    \namespace Expression {
+        %   ::= % ('+') % \do Addition
+            ||  ...
+    }
 
-    \namespace List
-        ::= ('[') %Items (']')
+    \namespace List {
+        """ a list is a comma-separated sequence of values
+        % ::= ('[') %Items (']')
+
         %Items ::= Item* \sep COMMA
+    }
 
 =cut
 
 sub command_namespace {
     my ($self) = @_;
     my $name = $self->expect($TT_IDENT);
-    $self->$_namespace($name);
-    return $TT_IDENT, $name;
+    /\G\s*[{]/mgc
+        or _::croakf q(Expected opening brace after namespace identifier);
+    my $scoped = $self->new_with(
+        namespace => $name,
+        buffer => do { my $b = ''; \$b },
+        # share the same deferred buffer, docs hash, ...
+    );
+    $scoped->pump($TT_CLOSE);
+    return $TT_OP => ${ $scoped->$_buffer };
 }
 
 =head2 command \doc

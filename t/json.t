@@ -507,22 +507,23 @@ __DATA__
 # ALL_UPPERCASE – G1 terminals / L0 top level symbols
 # all_lowercase – L0 symbols
 
-""" a JSON document, can either be an Object or an Array
-\namespace Json
-    ::= (_) %TopLevelItem (_)
+\namespace Json {
+    """ a JSON document, can either be an Object or an Array
+    % ::= (_) %TopLevelItem (_)
 
     """ the top level of a JSON document must be an Object or Array
     %TopLevelItem ::= Object | Array
+}
 
-    """ any value
-    Value ::= Object | Array | String | Number | Boolean | Null
+""" any value
+Value ::= Object | Array | String | Number | Boolean | Null
 
-    \doc hide
-    unicorn ~ [^\s\S] # can never be lexed
+\doc hide
+unicorn ~ [^\s\S] # can never be lexed
 
-""" optional white space
-\namespace _
-    ::= \doc hide \optional %Whitespace \null
+\namespace _ {
+    """ optional white space
+    % ::= \doc hide \optional %Whitespace \null
 
     \doc hide
     %Whitespace ::= %Item+ \null
@@ -530,30 +531,34 @@ __DATA__
     \doc hide
     %Item
         ::= { \doc hide %WS ~ [\s]+ } \null
-        |   ErrorComment \null
+        |   %ErrorComment \null
 
-\doc hide
-\namespace ErrorComment
-    ::= %COMMENT_INTRO %ERROR
+    \namespace %ErrorComment {
+        \doc hide
+        % ::= %COMMENT_INTRO %ERROR
 
-    \doc hide
-    %COMMENT_INTRO ~ '//' | '/*' | '#'
+        \doc hide
+        %COMMENT_INTRO ~ '//' | '/*' | '#'
 
-    """ ERROR: JSON does not support comments!
-    %ERROR ~ unicorn
+        """ ERROR: JSON does not support comments!
+        %ERROR ~ unicorn
+    }
+}
 
-""" either "true" or "false"
-\namespace Boolean
-    ::= {   \doc hide %true ~ 'true' } \do True
-    |   {   \doc hide %false ~ 'false' } \do False
+\namespace Boolean {
+    """ either "true" or "false"
+    %   ::= {   \doc hide %true ~ 'true' } \do True
+        |   {   \doc hide %false ~ 'false' } \do False
+}
 
-""" "null", the absence of values
-\namespace Null
-    ::= {   \doc hide %keyword ~ 'null' } \null
+\namespace Null {
+    """ "null", the absence of values
+    % ::= {   \doc hide %keyword ~ 'null' } \null
+}
 
-""" a key-value collection
-\namespace Object
-    ::= (%open _) %Contents (_ %close) \do Object
+\namespace Object {
+    """ a key-value collection
+    % ::= (%open _) %Contents (_ %close) \do Object
 
     """ zero or more %KeyValuePairs separated by Comma
     %Contents ::= %KeyValuePair* \sep Comma \array
@@ -569,10 +574,11 @@ __DATA__
 
     """ ":" separates keys from values
     %colon ~ ':'
+}
 
-""" a sequential collection
-\namespace Array
-    ::= (%open _) %Contents (_ %close)
+\namespace Array {
+    """ a sequential collection
+    % ::= (%open _) %Contents (_ %close)
 
     """ zero or more Values separated by Comma
     %Contents ::= Value* \sep Comma \array
@@ -582,17 +588,19 @@ __DATA__
 
     """ "]" ends an array
     %close ~ ']'
+}
 
-""" "," separates items in an Object or Array
-\namespace Comma
-    ::= (_  %comma  _) \null
+\namespace Comma {
+    """ "," separates items in an Object or Array
+    % ::= (_  %comma  _) \null
 
     \doc hide
     %comma ~ ','
+}
 
-""" quoted text with various allowed escapes
-\namespace String
-    ::= (%quote) { \doc hide %Contents ::= %Item* \array } (%quote) \do String
+\namespace String {
+    """ quoted text with various allowed escapes
+    % ::= (%quote) { \doc hide %Contents ::= %Item* \array } (%quote) \do String
 
     """ '"' begins and ends a string
     %quote ~ '"'
@@ -608,29 +616,31 @@ __DATA__
     """ "\" begins an escape sequence
     %backslash ~ '\'
 
-    \doc hide
-    %EscapeSequence
-    ::= {   """ "\n" newline escape
-            %newline_escape ~ 'n' } \do StringEscape
-    |   {   """ "\b" backspace escape
-            %backspace_escape ~ 'b' } \do StringEscape
-    |   {   """ "\r" carriage return escape
-            %carriage_return_escape ~ 'r' } \do StringEscape
-    |   {   """ "\t" tab escape
-            %tab_escape ~ 't' } \do StringEscape
-    |   {   """ "\f" form feed escape
-            %form_feed_escape ~ 'f' } \do StringEscape
-    |   {   """ "\uXXXX" an unicode escape for a 16-bit surrogate half in hex notation, e.g. \u2603 for ☃
-            %escape_unicode ~ 'u' %xdigit %xdigit %xdigit %xdigit } \do StringUnicodeEscape
-    |   {   """ escaped literal characters: double quote '"', backslash "\", solidus "/"
-            %escaped_literal ~ [\\"/] }
+    \namespace %EscapeSequence {
+        \doc hide
+        % ::= """ "\n" newline escape
+            { %newline ~ 'n' } \do StringEscape
+        |   """ "\b" backspace escape
+            { %backspace ~ 'b' } \do StringEscape
+        |   """ "\r" carriage return escape
+            { %carriage_return ~ 'r' } \do StringEscape
+        |   """ "\t" tab escape
+            { %tab_escape ~ 't' } \do StringEscape
+        |   """ "\f" form feed escape
+            { %form_feed ~ 'f' } \do StringEscape
+        |   """ "\uXXXX" an unicode escape for a 16-bit surrogate half in hex notation, e.g. \u2603 for ☃
+            { %unicode ~ 'u' %xdigit %xdigit %xdigit %xdigit } \do StringUnicodeEscape
+        |   """ escaped literal characters: double quote '"', backslash "\", solidus "/"
+            { %literal ~ [\\"/] }
 
-    \doc hide
-    %xdigit ~ [\p{PosixXDigit}]
+        \doc hide
+        %xdigit ~ [\p{PosixXDigit}]
+    }
+}
 
-""" integer or real number
-\namespace Number
-    ::= \doc hide
+\namespace Number {
+    """ integer or real number
+    % ::= \doc hide
         \optional { """ "-" starts a negative number
                     %minus ~ '-'}
         %LEADING_DIGITS
@@ -661,3 +671,4 @@ __DATA__
 
     """ the integral part of a number, e.g. "0", "7", "23"
     %LEADING_DIGITS ~ '0' | [1-9] { %leading_digits_rest ~ [0-9]* }
+}
