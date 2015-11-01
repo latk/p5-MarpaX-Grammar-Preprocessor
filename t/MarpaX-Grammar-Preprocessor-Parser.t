@@ -1056,5 +1056,43 @@ describe command_optional => sub {
         buffers => ['a', 'b'];
 };
 
+describe command_include => sub {
+    it 'works' => parser_fixture
+        method => 'command_include',
+        input => 'TheNamespace = test-include.bnf',
+        input_after => ' ***',
+        ctor_args => {
+            file_loader => sub {
+                my ($name) = @_;
+                is $name, 'test-include.bnf', 'got expected file name';
+                return '%symbol ~ is_awesome';
+            },
+        },
+        buffers => ['a', 'b'],
+        expected => [OP => 'TheNamespace__symbol ~ is_awesome'],
+        message => 'file contents are processed as a namespace';
+
+    it 'throws when no file loader was specified' => parser_fixture
+        method => 'command_include',
+        input => 'Foo = bar',
+        input_after => ' ***',
+        buffers => ['a', 'b'],
+        throws_ok => qr/\A\QThe \include command requires that a file_loader was specified\E\b/,
+        message => "include throws without file loader";
+
+    it 'throws when the equals sign was forgotten' => parser_fixture
+        method => 'command_include',
+        input => 'Foo',
+        input_after => ' foo',
+        buffers => ['a', 'b'],
+        throws_ok => qr/\A\QExpected equals sign "=" after namespace in \include command\E\b/;
+
+    it 'throws when no file name was found' => parser_fixture
+        method => 'command_include',
+        input => 'Foo =',
+        input_after => '  ',
+        buffers => ['a', 'b'],
+        throws_ok => qr/\A\QExpected file name in \include command\E\b/;
+};
 
 done_testing;

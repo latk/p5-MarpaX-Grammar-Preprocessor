@@ -313,6 +313,7 @@ For methods on the result object, see L<MarpaX::Grammar::Preprocessor::Result|Ma
 =head2 preprocess
 
     my $preprocessed = $api->preprocess($source);
+    my $preprocessed = $api->preprocess($source { %args });
 
 Processes the SLIF source.
 
@@ -321,6 +322,14 @@ See the L<DESCRIPTION section|/"DESCRIPTION"> for an overview of the accepted la
 B<$source>
 is the input to be processed.
 It can either be a string, or an open file handle.
+
+B<%args>
+are passed on to the C<parser_factory> to instantiate a parser.
+See the L<Parser documentation|MarpaX::Grammar::Preprocessor::Parser/"CONSTRUCTOR"> for available options. Interesting arguments are:
+
+=for :list
+* C<namespace>, which sets the default namespace.
+* C<file_loader>, which specifies a file loader callback for the C<\include> command.
 
 B<Returns>
 a L<MarpaX::Grammar::Preprocessor::Result|MarpaX::Grammar::Preprocessor::Result> instance.
@@ -346,7 +355,7 @@ B<Example:>
 =cut
 
 sub preprocess {
-    my ($self, $source) = @_;
+    my ($self, $source, $args_hash) = @_;
 
     if (not _::is_instance $self, __PACKAGE__) {
         _::croak "expected MarpaX::Grammar::Preprocessor instance in call to preprocess()";
@@ -360,7 +369,7 @@ sub preprocess {
     pos($source) = 0;
 
     my $parser_factory = $self->_MarpaX_Grammar_Preprocessor_parser_factory;
-    my $parser = $parser_factory->($self, \$source);
+    my $parser = $parser_factory->($self, \$source, %$args_hash);
 
     my ($type, $value) = $parser->pump('EOF');
 

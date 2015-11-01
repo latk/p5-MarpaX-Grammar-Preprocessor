@@ -58,6 +58,7 @@ my $TT_EOF = $TOKEN_TYPE->coerce('EOF');
         buffer_deferred = do { my $buffer = '; '; \$buffer },
         namespace => undef,
         namespace_separator => '__',
+        file_loader => undef,
     );
 
 instantiate a parser.
@@ -90,6 +91,11 @@ The separator for namespaced identifiers, defaults to C<__>.
 In the namespace C<Foo>, the identifier C<%Bar> would be translated to C<Foo__Bar>.
 You can provide a different separator that is legal in SLIF rule names,
 but doing so may break some code,
+
+B<file_loader>: C<< ($file_name: String) -> $file_contents: String >>
+
+This optional named argument is a code ref that is used by the L<C<\include> command|/"command \include"> to load an included file.
+See that command for more details.
 
 B<Returns>
 a new Parser instance.
@@ -160,6 +166,13 @@ my $_buffer_deferred = $attribute->(
 my $_optional_rule_cache = $attribute->(
     _MarpaX_Grammar_Preprocessor_Parser_optional_rule_cache =>
     default => sub { {} },
+);
+
+# a callback to load files for \include command
+my $_file_loader = $attribute->(
+    _MarpaX_Grammar_Preprocessor_Parser_file_loader =>
+    init_arg => 'file_loader',
+    default => sub { undef },
 );
 
 ################################################################################
@@ -930,6 +943,118 @@ sub command_optional {
         $optional_rule;
     };
     return $TT_IDENT, $optional_rule;
+}
+
+=head2 command \include
+
+=for Pod::Coverage
+    command_include
+
+    \include NAMESPACE = FILENAME
+
+Include a file into a namespace.
+
+This loads the file as if the file contents were put into a namespace.
+This potentially allows the same the same grammar fragment to be included into multiple namespaces.
+
+The C<file_loader> parser attribute is responsible for locating and reading the specified file.
+If no file loader was provided, this command will issue an error.
+This is done because there is no obvious sane default behaviour for an include mechanism,
+especially regarding file encodings and the handling of relative file paths.
+A possible implementation could be:
+
+    sub file_loader {
+        my ($filename) = @_;
+        my $real_filename = "/path/to/includes/$filename";
+        open my $fh, '<:utf8', $real_filename
+            or die "Could not open $real_filename: $!";
+        local $/; # slurp mode
+        return <$fh>;
+    }
+
+The file loader is not required to do any I/O, and could simply choose from a set of pre-defined inline grammar fragments.
+
+The included grammar file has no special restrictions.
+However, the file is included verbatim in the input, with the one exception of the implied namespace. Therefore:
+
+=for :list
+* global settings such as C<:discard> rules should be avoided, since they affect the whole grammar.
+* the included grammar should use namespaced names for all symbols. Global identifiers can't be prevented, but this would break grammar encapsulation.
+* action names are not namespaced, but this cannot be done since they must resolve to a Perl subroutine. Actions must be manually namespaced.
+
+B<NAMESPACE>:
+an C<IDENT> token that is the namespace to load the grammar fragment into.
+
+B<FILENAME>:
+the name of the file you want to load.
+The filename must not contain any spaces.
+How relative paths, encodings, etc. are handled depends on the C<file_loader> parser attribute.
+
+B<Expands to> the processed file contents.
+
+B<Example>:
+
+main grammar:
+
+    Literal ::= Integer | Float
+
+    Integer ::= int \do Integer
+    \include int = Integer.bnf
+
+    Float ::= float \do Float
+    \include float = Float.bnf
+
+Integer.bnf:
+
+    % ~ %zero | %start %rest
+    %zero ~ '0'
+    %start ~ [1-9]
+    %rest ~ [0-9]*
+
+Float.bnf:
+
+    %   ~ %int %fraction
+        | %int %fraction %exponent
+        | %int           %exponent
+    \include %int = Integer.bnf
+    %fraction ~ %dot %digits
+    %dot ~ '.'
+    %digits ~ [0-9]+
+    %exponent
+        ~ %e %sign %digits
+        | %e       %digits
+    %e ~ 'e':i
+
+=cut
+
+sub command_include {
+    my ($self) = @_;
+
+    my $name = $self->expect($TT_IDENT);
+
+    m/\G\s*[=]/gc
+        or die q(Expected equals sign "=" after namespace in \\include command);
+
+    m/\G\s*(\S+)/gc
+        or die q(Expected file name in \\include command);
+    my $file_name = $1;
+
+    my $file_loader = $self->$_file_loader;
+    if (not _::is_code_ref $file_loader) {
+        die q(The \\include command requires that a file_loader was specified);
+    }
+
+    my $file_contents = $file_loader->($file_name);
+    pos($file_contents) = 0;
+
+    my $scoped_parser = $self->new_with(
+        source_ref => \$file_contents,
+        namespace => $name,
+        buffer => do { my $b = ''; \$b },
+        # share the same other stuff
+    );
+    $scoped_parser->pump($TT_EOF);
+    return $TT_OP => ${ $scoped_parser->$_buffer };
 }
 
 1;

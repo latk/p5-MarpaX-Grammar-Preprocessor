@@ -56,7 +56,7 @@ use Test::Exception;
 
 use Util::Underscore;
 
-my $processed = MarpaX::Grammar::Preprocessor->new->preprocess(\*DATA);
+my $processed = MarpaX::Grammar::Preprocessor->new->preprocess(\*DATA, { file_loader => \&file_loader });
 my $grammar = Marpa::R2::Scanless::G->new({ source => \$processed->slif_source });
 
 # enter script mode if any command line arguments were provided
@@ -103,6 +103,16 @@ if (@ARGV) {
 }
 
 done_testing;
+
+sub file_loader {
+    my ($filename) = @_;
+    my $test_directory = _::File(__FILE__)->dir;
+    my $absolute_path = _::File($filename)->absolute($test_directory);
+    open my $fh, '<', $absolute_path
+        or die "Could not open $absolute_path: $!";
+    local $/;
+    return <$fh>;
+}
 
 sub json_load {
     my ($input) = @_;
@@ -293,7 +303,7 @@ sub pinpoint_error {
 
     # get info about the last successfuly parsed thing
     my $last_completed_report;
-    if (my ($g1_start, $g1_length) = $recce->last_completed('Value')) {
+    if (my ($g1_start, $g1_length) = $recce->last_completed('JSON__Value')) {
         my @candidate_symbols;
         my $g1_end = $g1_start + $g1_length;
         my $STATUS_COMPLETION = -1;
@@ -502,173 +512,6 @@ sub tree_join {
 }
 
 __DATA__
-# Naming convention:
-# CamelCase – G1 LHS symbols
-# ALL_UPPERCASE – G1 terminals / L0 top level symbols
-# all_lowercase – L0 symbols
-
-\namespace Json {
-    """ a JSON document, can either be an Object or an Array
-    % ::= (_) %TopLevelItem (_)
-
-    """ the top level of a JSON document must be an Object or Array
-    %TopLevelItem ::= Object | Array
-}
-
-""" any value
-Value ::= Object | Array | String | Number | Boolean | Null
-
-\doc hide
-unicorn ~ [^\s\S] # can never be lexed
-
-\namespace _ {
-    """ optional white space
-    % ::= \doc hide \optional %Whitespace \null
-
-    \doc hide
-    %Whitespace ::= %Item+ \null
-
-    \doc hide
-    %Item
-        ::= { \doc hide %WS ~ [\s]+ } \null
-        |   %ErrorComment \null
-
-    \namespace %ErrorComment {
-        \doc hide
-        % ::= %COMMENT_INTRO %ERROR
-
-        \doc hide
-        %COMMENT_INTRO ~ '//' | '/*' | '#'
-
-        """ ERROR: JSON does not support comments!
-        %ERROR ~ unicorn
-    }
-}
-
-\namespace Boolean {
-    """ either "true" or "false"
-    %   ::= {   \doc hide %true ~ 'true' } \do True
-        |   {   \doc hide %false ~ 'false' } \do False
-}
-
-\namespace Null {
-    """ "null", the absence of values
-    % ::= {   \doc hide %keyword ~ 'null' } \null
-}
-
-\namespace Object {
-    """ a key-value collection
-    % ::= (%open _) %Contents (_ %close) \do Object
-
-    """ zero or more %KeyValuePairs separated by Comma
-    %Contents ::= %KeyValuePair* \sep Comma \array
-
-    """ a key-value pair
-    %KeyValuePair ::= String (_ %colon _) Value \array
-
-    """ "{" begins an object
-    %open ~ '{'
-
-    """ "}" ends an object
-    %close ~ '}'
-
-    """ ":" separates keys from values
-    %colon ~ ':'
-}
-
-\namespace Array {
-    """ a sequential collection
-    % ::= (%open _) %Contents (_ %close)
-
-    """ zero or more Values separated by Comma
-    %Contents ::= Value* \sep Comma \array
-
-    """ "[" begins an array
-    %open ~ '['
-
-    """ "]" ends an array
-    %close ~ ']'
-}
-
-\namespace Comma {
-    """ "," separates items in an Object or Array
-    % ::= (_  %comma  _) \null
-
-    \doc hide
-    %comma ~ ','
-}
-
-\namespace String {
-    """ quoted text with various allowed escapes
-    % ::= (%quote) { \doc hide %Contents ::= %Item* \array } (%quote) \do String
-
-    """ '"' begins and ends a string
-    %quote ~ '"'
-
-    \doc hide
-    %Item
-        ::= %ordinary_string_contents
-        |   (%backslash) %EscapeSequence
-
-    """ anything but a quote or backslash
-    %ordinary_string_contents ~ [^"\\]+
-
-    """ "\" begins an escape sequence
-    %backslash ~ '\'
-
-    \namespace %EscapeSequence {
-        \doc hide
-        % ::= """ "\n" newline escape
-            { %newline ~ 'n' } \do StringEscape
-        |   """ "\b" backspace escape
-            { %backspace ~ 'b' } \do StringEscape
-        |   """ "\r" carriage return escape
-            { %carriage_return ~ 'r' } \do StringEscape
-        |   """ "\t" tab escape
-            { %tab_escape ~ 't' } \do StringEscape
-        |   """ "\f" form feed escape
-            { %form_feed ~ 'f' } \do StringEscape
-        |   """ "\uXXXX" an unicode escape for a 16-bit surrogate half in hex notation, e.g. \u2603 for ☃
-            { %unicode ~ 'u' %xdigit %xdigit %xdigit %xdigit } \do StringUnicodeEscape
-        |   """ escaped literal characters: double quote '"', backslash "\", solidus "/"
-            { %literal ~ [\\"/] }
-
-        \doc hide
-        %xdigit ~ [\p{PosixXDigit}]
-    }
-}
-
-\namespace Number {
-    """ integer or real number
-    % ::= \doc hide
-        \optional { """ "-" starts a negative number
-                    %minus ~ '-'}
-        %LEADING_DIGITS
-        \doc hide \optional %FractionalPart
-        \doc hide \optional %Exponent
-        \do Number
-
-    """ The fractional part of a number, e.g. ".0230"
-    %FractionalPart
-        ::= {  """ a period "." separates the integral part from the fractional part of a number
-                %PERIOD ~ '.' }
-            %DIGITS
-            \array
-
-    """ The exponent of a number, e.g. "E-02".
-    %Exponent
-        ::= {   """ The exponent separator "e" or "E" separates the exponent from the rest of the number
-                %EXPONENT_SEPARATOR ~ [eE] }
-            \doc hide
-            \optional { """ The exponent can be positive "+" or negative "-", defaulting to positive
-                        %EXPONENT_SIGN ~ [+-] }
-            %DIGITS
-            \array
-
-
-    """ an arbitrary sequence of decimal digits
-    %DIGITS ~ [0-9]+
-
-    """ the integral part of a number, e.g. "0", "7", "23"
-    %LEADING_DIGITS ~ '0' | [1-9] { %leading_digits_rest ~ [0-9]* }
-}
+:start ::= JSON
+# see t/json.bnf for the actual grammar
+\include JSON = json.bnf
