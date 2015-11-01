@@ -126,6 +126,23 @@ The namespace separator is currently set to double underscores,
 so you shouldn't use them in your identifiers
 (see also the stability policy section).
 
+Namespaces can be nested.
+To refer to an outside namespace's name, you can use a sequence of leading docs in a namespaced name:
+
+    Rule ::= ...;
+    \namespace Outer {
+        %Rule ::= ...;
+        \namespace %Inner {
+            %Rule ::= ...;
+
+            # %.Rule is Outer__Inner__Rule
+            # %..Rule is Outer__Rule
+            # %...Rule is Rule
+        }
+    }
+
+This usage is analogous to Python's relative modules.
+
 =head2 Inline Rules
 
 Many rules in a SLIF grammar are only used in one place,

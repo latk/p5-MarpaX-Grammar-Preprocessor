@@ -87,7 +87,7 @@ B<namespace_separator>: string
 
 The separator for namespaced identifiers, defaults to C<__>.
 
-In the naamespace C<Foo>, the identifier C<%Bar> would be translated to C<Foo__Bar>.
+In the namespace C<Foo>, the identifier C<%Bar> would be translated to C<Foo__Bar>.
 You can provide a different separator that is legal in SLIF rule names,
 but doing so may break some code,
 
@@ -465,12 +465,19 @@ sub next_token {
                     // _::croak q(No namespace was set);
 
                 my $sep = $self->$_namespace_separator;
-                if (m/\G( \w+ )/gc) {
+                if (m/\G(\w+)/gc) {
                     return $TT_IDENT, "${ns}${sep}${1}";
                 }
-                else {
-                    return $TT_IDENT, $ns;
+                if (m/\G[.]([.]+)( \w* )/gc) {
+                    my $uplevel = length $1;
+                    my $ident = $2;
+                    my @name_parts = split /.\K\Q$sep\E/, $ns;
+                    splice @name_parts, -$uplevel;
+                    push @name_parts, $ident if length $ident;
+                    my $namespaced_ident = join $sep, @name_parts;
+                    return $TT_IDENT, $namespaced_ident;
                 }
+                return $TT_IDENT, $ns;
             }
 
             # read string literals

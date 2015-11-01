@@ -316,7 +316,7 @@ describe new_with => sub {
             buffer_deferred => undef,
         );
 
-        my $copy = $orig->new_with(source_ref => \"foo");
+        my $copy = $orig->new_with(source_ref => \("foo"));
 
         ok +(_::is_instance $copy, 'Local::ParserSubclassForNewWith'),
             'got correct class'
@@ -324,7 +324,7 @@ describe new_with => sub {
                 (_::class $copy) // "<undef>",
                 'Local::ParserSubclassForNewWith';
         is_deeply $copy->_MarpaX_Grammar_Preprocessor_Parser_source_ref,
-            \'foo',
+            \('foo'),
             'got overridden source_ref value';
         is  $copy->_MarpaX_Grammar_Preprocessor_Parser_namespace,
             $orig->_MarpaX_Grammar_Preprocessor_Parser_namespace,
@@ -489,6 +489,24 @@ describe next_token => sub {
 
             is_deeply \@result, [IDENT => 'TheNamespace'], 'got the namespace';
         };
+
+    it 'supports relative namespaced identifiers' => sub {
+        my $test = sub {
+            my ($namespace, $input, $expected) = @_;
+            return parser_fixture
+                method => 'next_token',
+                input => $input,
+                buffers => ['a', 'b'],
+                ctor_args => {
+                    namespace => $namespace,
+                },
+                expected => [IDENT => $expected];
+        };
+
+        case 'one up' => $test->(Foo__Bar => '%..foo', 'Foo__foo');
+        case 'one up to root' => $test->(Foo => '%..foo', 'foo');
+        case 'three up' => $test->(Foo__Bar__Baz__Qux => '%....foo', 'Foo__foo');
+    };
 
     it 'dies if no namespace was set' => parser_fixture
         input => '%',
