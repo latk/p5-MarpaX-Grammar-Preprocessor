@@ -401,7 +401,7 @@ use constant TOKEN_TYPE => 'MarpaX::Grammar::Preprocessor::TokenType';
 
 # defines IDENT => 1, etc.
 # think "use constant { IDENT => 1, ... };"
-use constant { map { $_->name => $_ } TOKEN_TYPE->all_token_types };
+use constant +{ map { $_->name => $_ } TOKEN_TYPE->all_token_types };
 
 =head2 SLIF_PRELUDE
 
