@@ -1,3 +1,5 @@
+=pod
+
 =encoding utf8
 
 =head1 NAME
@@ -25,32 +27,37 @@ v0.0_1
     #   lexeme default = latm => 1
 
     # A namespace allows us to gensym names for %helper rules
-    \namespace Foo
-        ::= %BAR | %Baz
+    \namespace Foo {
+        % ::= %BAR | %Baz
         %BAR ~ 'bar'        # really Foo__BAR
         %Baz ::= %BAR %BAR  # really Foo__Baz
+    }
 
-    # The next namespace is totally unrelated.
-    \namespace Qux
-        ::= %BAR
+    # a different namespace
+    \namespace Qux {
+        % ::= %BAR
         %BAR ~ 'quxbar'     # really Qux__BAR
+    }
 
     # Associate a docstring with the next symbol.
-    # Docstrings can span multiple lines, all beginning with a triple quote.
-    """ a list of values. Examples:
-    """     []          (empty list)
-    """     [1, 2, 3]   (list with three integers)
-    \namespace List
-        ::= (LEFT_BRACKET) %Items (RIGHT_BRACKET)
+    \namespace List {
+        # Docstrings can span multiple lines, all beginning with a triple quote.
+        """ a list of values. Examples:
+        """     []          (empty list)
+        """     [1, 2, 3]   (list with three integers)
+        % ::= (LEFT_BRACKET) %Items (RIGHT_BRACKET)
+
         %Items ::= Value* \sep COMMA  # \sep expands to "separator => "
+    }
 
     # Use { curly braces } to specify an inline rule.
     # Inline rules still need a name.
     # \array expands to "action => ::array"
-    """ a key-value dictionary
-    \namespace Dict
-        ::= (LEFT_BRACE) { %Items ::= %KVItem* \sep COMMA \array } (RIGHT_BRACE)
+    \namespace Dict {
+        """ a key-value dictionary
+        % ::= (LEFT_BRACE) { %Items ::= %KVItem* \sep COMMA \array } (RIGHT_BRACE)
         %KVItem ::= Key (COLON) Value \array
+    }
 
     # Suppress documentation for any symbol.
     # Great for internal helper rules!
@@ -94,10 +101,11 @@ This makes it easy to have quasi-private names without too much typing.
 
 Example:
 
-    \namespace Term
+    \namespace Term {
         ::= % (%PLUS) Factor
 
         %PLUS ~ '+'
+    }
 
 Is transformed to:
 
@@ -106,7 +114,24 @@ Is transformed to:
 
 The namespace separator is currently set to double underscores,
 so you shouldn't use them in your identifiers
-(see also the stabilit policy section).
+(see also the stability policy section).
+
+Namespaces can be nested.
+To refer to an outside namespace's name, you can use a sequence of leading docs in a namespaced name:
+
+    Rule ::= ...;
+    \namespace Outer {
+        %Rule ::= ...;
+        \namespace %Inner {
+            %Rule ::= ...;
+
+            # %.Rule is Outer__Inner__Rule
+            # %..Rule is Outer__Rule
+            # %...Rule is Rule
+        }
+    }
+
+This usage is analogous to Python's relative modules.
 
 =head2 Inline Rules
 
@@ -120,8 +145,9 @@ and defer the definition of the rule until a safe state is reached.
 
 Example:
 
-    \namespace List
+    \namespace List {
         ::= ('[') { %Items ::= Value* \sep COMMA \array } (']')
+    }
 
 Is transformed to:
 
@@ -188,20 +214,20 @@ When your command is encountered in the input, the processor will invoke that me
 The SLIF source will be available in the C<$_> variable,
 and C<pos()> will be set to the current position.
 You can therefore use an C<m/\G ... /gc> style match to do your own parsing.
-Alternatively, you can L<< C<expect()>|MarpaX::Grammar::Preprocessor::Parser/"expect" >> a certain token type,
-or poll for the L<< C<next_token()>|MarpaX::Grammar::Preprocessor::Parser/"next_token" >> regardless of type.
+Alternatively, you can L<C<expect()>|MarpaX::Grammar::Preprocessor::Parser/"expect"> a certain token type,
+or poll for the L<C<next_token()>|MarpaX::Grammar::Preprocessor::Parser/"next_token"> regardless of type.
 Please see their reference documentation for more details.
 
 The command must return a list of two values: the token type and the token value.
-See L<< C<TOKEN_TYPES in the TokenType docs>|MarpaX::Grammar::Preprocessor::TokenType/"TOKEN TYPES" >>
+See L<C<TOKEN_TYPES in the TokenType docs>|MarpaX::Grammar::Preprocessor::TokenType/"TOKEN TYPES">
 for a list of valid token types.
 Pick an appropriate token type depending on how that value might be used.
 E.g. if the return value is to be used on the right hand side of a rule,
 it must be an C<IDENT> or C<LITERAL>.
 
 You may also use the
-L<< C<write()>|MarpaX::Grammar::Preprocessor::Parser/"write" >> and
-L<< C<write_deferred()>|MarpaX::Grammar::Preprocessor::Parser/"write_deferred" >> methods
+L<C<write()>|MarpaX::Grammar::Preprocessor::Parser/"write"> and
+L<C<write_deferred()>|MarpaX::Grammar::Preprocessor::Parser/"write_deferred"> methods
 to write SLIF rules to an output buffer.
 Only C<write()> to the main buffer if it is safe to do so
 (e.g. if your command is supposed to be only used at the start of a rule).
@@ -237,6 +263,7 @@ For methods on the result object, see L<MarpaX::Grammar::Preprocessor::Result|Ma
 =head2 preprocess
 
     my $preprocessed = $api->preprocess($source);
+    my $preprocessed = $api->preprocess($source { %args });
 
 Processes the SLIF source.
 
@@ -245,6 +272,22 @@ See the L<DESCRIPTION section|/"DESCRIPTION"> for an overview of the accepted la
 B<$source>
 is the input to be processed.
 It can either be a string, or an open file handle.
+
+B<%args>
+are passed on to the C<parser_factory> to instantiate a parser.
+See the L<Parser documentation|MarpaX::Grammar::Preprocessor::Parser/"CONSTRUCTOR"> for available options. Interesting arguments are:
+
+=over 4
+
+=item *
+
+C<namespace>, which sets the default namespace.
+
+=item *
+
+C<file_loader>, which specifies a file loader callback for the C<\include> command.
+
+=back
 
 B<Returns>
 a L<MarpaX::Grammar::Preprocessor::Result|MarpaX::Grammar::Preprocessor::Result> instance.
@@ -275,6 +318,7 @@ B<Example:>
     $self->LITERAL;
     $self->OP;
     $self->CLOSE;
+    $self->EOF;
 
 C<TOKEN_TYPE> names the L<TokenType|MarpaX::Grammar::Preprocessor::TokenType> class
 that models the various token types in an extended SLIF grammar.
@@ -357,7 +401,7 @@ it may not use the C<_MarpaX_Grammar_Preprocessor> prefix.
 Please report any bugs to L<https://github.com/latk/p5-MarpaX-Grammar-Preprocessor/issues>.
 If you file a bug, please try to include the following information if you are able to do so:
 
-=over 4
+=over
 
 =item *
 your version of Perl:
@@ -410,4 +454,4 @@ Lukas Atkinson (cpan: AMON) <amon@cpan.org>
     <http://www.gnu.org/licenses/gpl-1.0.html>, and
     <http://www.gnu.org/licenses/gpl-3.0.html>.
 
-
+=cut
