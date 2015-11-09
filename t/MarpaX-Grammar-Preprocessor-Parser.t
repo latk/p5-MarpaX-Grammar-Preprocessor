@@ -69,7 +69,16 @@ sub _fixture_handle_source_ref {
     pos($input) = $pos;
     my $source_ref = \$input;
 
-    $fixture->{pos} = $pos;
+    {
+        $fixture->{pos} = $pos;
+        my $context_seen = $input_before . $input_middle;
+        $context_seen =~ /(.{0,20})\z/s and $fixture->{context_seen} = $1;
+        $input_after  =~ /\A(.{0,20})/s and $fixture->{context_next} = $1;
+        my $line_contents;
+        $context_seen =~ /([^\n]*)\z/ and $line_contents .= $1;
+        $input_after  =~ /\A([^\n]*)/ and $line_contents .= $1;
+        $fixture->{line_contents} = $line_contents;
+    }
 
     my $postcondition = sub {
         is pos($$source_ref), $pos_expected, $pos_message;
@@ -114,12 +123,45 @@ sub _fixture_handle_method {
     my $message = delete $args->{message} // 'got SLIF snippet';
 
     my $main_test;
-    if (my $regex = delete $args->{throws_ok}) {
-        $message //= $regex;
-        $main_test = sub {
-            my ($parser) = @_;
-            throws_ok { $parser->$method(@$method_args) } $regex, $message;
-        };
+    if (my $throws_spec = delete $args->{throws_ok}) {
+        if (_::is_regex $throws_spec) {
+            my $regex = $throws_spec;
+            $message //= $regex;
+            $main_test = sub {
+                my ($parser) = @_;
+                throws_ok { $parser->$method(@$method_args) } $regex, $message;
+            };
+        }
+        elsif (_::is_hash_ref $throws_spec) {
+            my %throws_args = %$throws_spec;
+            my $class = delete $throws_args{class};
+            $message //= sprintf "throws %s exception object", $class // "unknown";
+
+            if (defined $class and $class eq 'MarpaX::Grammar::Preprocessor::ParseException') {
+                $throws_args{context_seen} = $fixture->{context_seen}
+                    if not exists $throws_args{context_seen};
+                $throws_args{context_next} = $fixture->{context_next}
+                    if not exists $throws_args{context_next};
+                $throws_args{line_contents} = $fixture->{line_contents}
+                    if not exists $throws_args{line_contents};
+            }
+
+            $main_test = sub {
+                my ($parser) = @_;
+                dies_ok { $parser->$method(@$method_args) } $message
+                    or return;
+                my $err = $@;
+
+                isa_ok $err, $class if defined $class;
+                for my $field (sort keys %throws_args) {
+                    my $expected = $throws_args{$field};
+                    is $err->$field, $expected, "error $field matches";
+                }
+            };
+        }
+        else {
+            die "named argument throws_ok must be regex or hash ref";
+        }
     }
     elsif (my $expected = delete $args->{expected})
     {
@@ -152,12 +194,12 @@ sub parser_fixture {
     my (%args) = @_;
     my %fixture;
 
+    my ($source_ref, $source_ref_postcondition) =
+        _fixture_handle_source_ref(\%args, \%fixture);
+
     _fixture_handle_method(\%args, \%fixture);
 
     my $test = delete $args{test} // die "argument test required";
-
-    my ($source_ref, $source_ref_postcondition) =
-        _fixture_handle_source_ref(\%args, \%fixture);
 
     my ($buffers, $buffers_postcondition) =
         _fixture_handle_buffers(\%args, \%fixture);
@@ -399,13 +441,12 @@ describe next_token => sub {
     };
 
     it 'throws when no explicit pos() was defined' => parser_fixture
+        method => 'next_token',
         source_ref => \"",
         buffers => [undef, undef],
-        test => sub {
-            my ($parser) = @_;
-
-            throws_ok { $parser->next_token }
-                qr/\A\Qinput source match position was not defined\E\b/;
+        throws_ok => {
+            class => 'MarpaX::Grammar::Preprocessor::Exception',
+            message => 'input source match position was not defined',
         };
 
     it 'appends whitespace and comments to buffer, then returns next token' => sub {
@@ -509,13 +550,12 @@ describe next_token => sub {
     };
 
     it 'dies if no namespace was set' => parser_fixture
+        method => 'next_token',
         input => '%',
         buffers => [undef, undef],
-        test => sub {
-            my ($parser) = @_;
-
-            throws_ok { $parser->next_token }
-                qr/\A\QNo namespace was set\E\b/;
+        throws_ok => {
+            class => 'MarpaX::Grammar::Preprocessor::ParseException',
+            message => 'Namespaced identifiers can only be used inside a namespace',
         };
 
     it 'returns literal strings' => parser_fixture
@@ -600,13 +640,12 @@ describe next_token => sub {
         };
 
     it 'throws for unknown commands' => parser_fixture
+        method => 'next_token',
         input => '\\this_command_does_not_exist_I_hope',
         buffers => ['a', 'b'],
-        test => sub {
-            my ($parser) = @_;
-
-            throws_ok { $parser->next_token }
-                qr/\A\QUnknown command this_command_does_not_exist_I_hope, could not find command_this_command_does_not_exist_I_hope\E\b/;
+        throws_ok => {
+            class => 'MarpaX::Grammar::Preprocessor::ParseException',
+            message => 'Unknown command \\this_command_does_not_exist_I_hope, could not find command_this_command_does_not_exist_I_hope() method'
         };
 
     it 'recurses into inline rules' => parser_fixture
@@ -623,14 +662,13 @@ describe next_token => sub {
         };
 
     it 'throws when inline rules aren\'t properly terminated' => parser_fixture
+        method => 'next_token',
         input => q({ the_name bleh),
         input_after => '',
         buffers => ['a', 'b'],
-        test => sub {
-            my ($parser) = @_;
-
-            throws_ok { $parser->next_token }
-                qr/\A\QExpecting closing brace for inline rule, but got EOF\E\b/;
+        throws_ok => {
+            class => 'MarpaX::Grammar::Preprocessor::ParseException',
+            message => 'Expecting closing brace for inline rule, but got EOF',
         };
 
     it 'returns close tokens' => parser_fixture
@@ -657,25 +695,13 @@ describe next_token => sub {
         };
 
     it 'tries to explain impossible syntax errors' => parser_fixture
+        method => 'next_token',
         input => '',
-        input_after => q(''345678901234567890), # 20 char tail
+        input_after => q(''345678901234567890),
         buffers => ['a', 'b'],
-        test => sub {
-            my ($parser) = @_;
-
-            throws_ok { $parser->next_token }
-                qr/\A\QIllegal code path taken: unknown grammar string at "''345678901234567890"\E/;
-        };
-
-    it 'tries to explain impossible syntax errors with shortened input' => parser_fixture
-        input => '',
-        input_after => q(''3456789012345678901), # 21 char tail
-        buffers => ['a', 'b'],
-        test => sub {
-            my ($parser) = @_;
-
-            throws_ok { $parser->next_token }
-                qr/\A\QIllegal code path taken: unknown grammar string at "''345678901234567..."\E/;
+        throws_ok => {
+            class => 'MarpaX::Grammar::Preprocessor::ParseException',
+            message => 'Illegal code path taken: unknown grammar string',
         };
 };
 
@@ -780,27 +806,38 @@ describe expect => sub {
         };
 
     it 'dies when the token type is not accepted' => parser_fixture
+        method => 'expect',
+        method_args => [qw/LITERAL OP/],
         source_ref => undef,
         class => 'Local::Parser::MockNextToken',
         ctor_args => { mock_tokens => [[IDENT => 'the value']] },
         buffers => [undef, undef],
-        test => sub {
-            my ($parser) = @_;
+        throws_ok => {
+            class => 'MarpaX::Grammar::Preprocessor::ParseException',
+            message => 'expected {LITERAL, OP} but found IDENT',
+        };
 
-            throws_ok { $parser->expect(qw/LITERAL OP/) }
-            qr/\A\Qexpected {LITERAL, OP} but found IDENT\E\b/;
+    it 'has error messages pointing to the beginning of the token' => parser_fixture
+        method => 'expect',
+        method_args => ['LITERAL', 'OP'],
+        input => '',
+        input_after => 'foo****', # an IDENT
+        buffers => [undef, undef],
+        throws_ok => {
+            class => 'MarpaX::Grammar::Preprocessor::ParseException',
+            message => 'expected {LITERAL, OP} but found IDENT',
         };
 
     it 'dies if no tokens are available' => parser_fixture
+        method => 'expect',
+        method_args => [qw/ LITERAL OP /],
         source_ref => undef,
         class => 'Local::Parser::MockNextToken',
         ctor_args => { mock_tokens => [] },
         buffers => [undef, undef],
-        test => sub {
-            my ($parser) = @_;
-
-            throws_ok { $parser->expect(qw/LITERAL OP/) }
-            qr/\A\Qexpected {LITERAL, OP} but found EOF\E\b/;
+        throws_ok => {
+            class => 'MarpaX::Grammar::Preprocessor::ParseException',
+            message => 'expected {LITERAL, OP} but found EOF',
         };
 };
 
@@ -851,8 +888,11 @@ describe command_do => sub {
         method => 'command_do',
         input => '',
         input_after => ' %glorp',
-        throws_ok => qr/\A\QExpected action name\E\b/,
-        buffers => ['a', 'b'];
+        buffers => ['a', 'b'],
+        throws_ok => {
+            class => 'MarpaX::Grammar::Preprocessor::ParseException',
+            message => 'Expected action name',
+        };
 };
 
 describe command_sep => parser_fixture
@@ -980,7 +1020,6 @@ describe command_doc => sub {
         method => 'command_doc',
         input => '',
         input_after => 'florp6789012345678901',
-        throws_ok => qr/\A\QExpected docstring near "florp678901234567890"...\E/,
         class => 'Local::Parser::MockNextToken',
         ctor_args => {
             mock_tokens => [
@@ -989,6 +1028,10 @@ describe command_doc => sub {
             _MarpaX_Grammar_Preprocessor_Parser_docs=> { foo => "foo docs" },
         },
         buffers => ['a', 'b'],
+        throws_ok => {
+            class => 'MarpaX::Grammar::Preprocessor::ParseException',
+            message => 'Expected docstring',
+        },
         postcondition => sub {
             my ($parser) = @_;
             my $docs = $parser->_MarpaX_Grammar_Preprocessor_Parser_docs,
@@ -1077,7 +1120,10 @@ describe command_include => sub {
         input => 'Foo = bar',
         input_after => ' ***',
         buffers => ['a', 'b'],
-        throws_ok => qr/\A\QThe \include command requires that a file_loader was specified\E\b/,
+        throws_ok => {
+            class => 'MarpaX::Grammar::Preprocessor::Exception',
+            message => 'The \include command requires that a file_loader was specified',
+        },
         message => "include throws without file loader";
 
     it 'throws when the equals sign was forgotten' => parser_fixture
@@ -1085,14 +1131,20 @@ describe command_include => sub {
         input => 'Foo',
         input_after => ' foo',
         buffers => ['a', 'b'],
-        throws_ok => qr/\A\QExpected equals sign "=" after namespace in \include command\E\b/;
+        throws_ok => {
+            class => 'MarpaX::Grammar::Preprocessor::ParseException',
+            message => 'Expected equals sign "=" after namespace in \include command',
+        };
 
     it 'throws when no file name was found' => parser_fixture
         method => 'command_include',
         input => 'Foo =',
         input_after => '  ',
         buffers => ['a', 'b'],
-        throws_ok => qr/\A\QExpected file name in \include command\E\b/;
+        throws_ok => {
+            class => 'MarpaX::Grammar::Preprocessor::ParseException',
+            message => 'Expected file name in \include command',
+        };
 };
 
 done_testing;

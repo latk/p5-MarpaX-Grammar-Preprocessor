@@ -15,9 +15,12 @@ MarpaX::Grammar::Preprocessor::Parser - parse extended SLIF grammars
 package MarpaX::Grammar::Preprocessor::Parser;
 use Moo;
 
+use MarpaX::Grammar::Preprocessor::Exception;
 use MarpaX::Grammar::Preprocessor::Result;
 use MarpaX::Grammar::Preprocessor::TokenType;
+
 use Util::Underscore v1.3.0;
+
 use namespace::clean;
 
 my $TOKEN_TYPE = 'MarpaX::Grammar::Preprocessor::TokenType';
@@ -182,37 +185,6 @@ my $_file_loader = $attribute->(
 ################################################################################
 
 =head2 METHODS
-
-=cut
-
-my $report_error = sub {
-    my ($source_ref, $pos, @message) = @_;
-    _::alias my $source = $$source_ref;
-
-    # find the line start, and skip that newline.
-    # If no line beginning is found, we are on the first line.
-    # Since rindex returns -1 on failure, position 1 is correct.
-    my $line_start = 1 + rindex $source, "\n", $pos;
-    my $line_end = index $source, "\n", $pos;
-    $line_end = length($source) - 1 if $line_end < 0;
-    my $line_length = $line_end - $line_start + 1;
-    my $line_contents = substr $source, $line_start, $line_length;
-
-    my $line_ptr = q( ) x ($pos - $line_start) . '^--';
-
-    my $context_seen = substr $source, _::max($pos - 20, 0), _::min(20, $pos);
-    my $context_next = substr $source, $pos, 20;
-
-    @_ = (
-        @message, "\n",
-        "after: ", _::pp($context_seen), "\n",
-        "before: ", _::pp($context_next), "\n",
-        "on line:\n",
-        "$line_contents\n",
-        "$line_ptr\n ",
-    );
-    goto &CORE::die;
-};
 
 =head2 result
 
@@ -379,28 +351,34 @@ B<Example>:
 sub pump {
     my ($self, @terminating_types) = @_;
     if (not @terminating_types) {
-        _::croak "pump() requires at least one terminating type";
+        MarpaX::Grammar::Preprocessor::Exception
+            ->throw(
+                message => "pump() requires at least one terminating type",
+            );
     }
     my %terminating_types = map { $TOKEN_TYPE->coerce($_) => undef } @terminating_types;
 
     # pump the whole source through the preprocessor
     while (1) {
         my ($type, $value) = $self->next_token
-            or _::croak "next_token() in pump() didn't return a token";
+            or MarpaX::Grammar::Preprocessor::Exception
+                ->new_f(q(next_token() in pump() didn't return a token), [])
+                ->throw;
         return ($type, $value) if exists $terminating_types{$type};
 
         # if the token is not a requested terminator,
         # but can't be printed because it would usually be a terminator,
         # then throw an error.
         if (_::any { $type eq $_ } qw/EOF CLOSE/) {
-            $report_error->(
-                $self->$_source_ref,
-                pos(${ $self->$_source_ref }),
-                sprintf 'Unexpected token %s(%s), expected %s',
+            MarpaX::Grammar::Preprocessor::ParseException
+                ->new_from_source_f(
+                    $self->$_source_ref,
+                    'Unexpected token %s(%s), expected %s',
                     $type,
                     _::pp($value),
                     "@terminating_types",
-            );
+                )
+                ->throw;
         }
 
         $self->write($value);
@@ -452,7 +430,10 @@ sub next_token {
         use re '/sx';
 
         if (not defined pos) {
-            _::croak "input source match position was not defined";
+            MarpaX::Grammar::Preprocessor::Exception
+                ->throw(
+                    message => "input source match position was not defined",
+                );
         }
 
         TRY:
@@ -473,9 +454,13 @@ sub next_token {
 
             # read namespace references and namespaced identifiers
             if (m/\G [%] /gc) {
-                # uncoverable condition right
                 my $ns = $self->$_namespace
-                    // _::croak q(No namespace was set);
+                    // MarpaX::Grammar::Preprocessor::ParseException
+                        ->new_from_source_f(
+                            $self->$_source_ref,
+                            q(Namespaced identifiers can only be used inside a namespace),
+                        )
+                        ->throw;
 
                 my $sep = $self->$_namespace_separator;
                 if (m/\G(\w+)/gc) {
@@ -508,7 +493,13 @@ sub next_token {
                 my $command = $1;
                 my $method_name = "command_${command}";
                 my $handler = $self->can($method_name)
-                    or _::croak "Unknown command $command, could not find $method_name method";
+                    or MarpaX::Grammar::Preprocessor::ParseException
+                        ->new_from_source_f(
+                            $self->$_source_ref,
+                            q(Unknown command \\%s, could not find %s() method),
+                            $command, $method_name,
+                        )
+                        ->throw;
                 my ($type, $value) = $handler->($self);
                 return $TOKEN_TYPE->coerce($type), $value;
             }
@@ -527,7 +518,13 @@ sub next_token {
                 # Throw if the inline rule wasn't terminated via a CLOSE brace.
                 my ($type, $value) = $scoped->pump($TT_EOF, $TT_CLOSE);
                 if ($type != $TT_CLOSE) {
-                    _::croak "Expecting closing brace for inline rule, but got $type";
+                    MarpaX::Grammar::Preprocessor::ParseException
+                        ->new_from_source_f(
+                            $self->$_source_ref,
+                            q(Expecting closing brace for inline rule, but got %s),
+                            $type,
+                        )
+                        ->throw;
                 }
 
                 $self->write_deferred($scoped->result->slif_source);
@@ -551,10 +548,12 @@ sub next_token {
                 return $TT_OP, $1
             }
 
-            my $source_around_here = substr $_, pos, 20;
-            $source_around_here =~ s/...\z/.../s if length() - pos() > 20;
-            die sprintf "Illegal code path taken: unknown grammar string at %s",
-                _::pp $source_around_here;
+            MarpaX::Grammar::Preprocessor::ParseException
+                ->new_from_source_f(
+                    $self->$_source_ref,
+                    q(Illegal code path taken: unknown grammar string),
+                )
+                ->throw;
         }
 
         return $TT_EOF, undef;
@@ -597,10 +596,19 @@ B<Example:>
 
 sub expect {
     my ($self, @expected) = @_;
+    my $pos = ($self->$_source_ref) ? pos(${ $self->$_source_ref }) : undef;
     my ($type, $value) = $self->next_token;
     return $value if _::any { $type == $_ } @expected;
-    _::croakf "expected {%s} but found %s",
-        (join ', ', @expected), $type;
+
+    pos(${ $self->$_source_ref }) = $pos if defined $pos;
+    MarpaX::Grammar::Preprocessor::ParseException
+        ->new_from_source_f(
+            $self->$_source_ref,
+            q(expected {%s} but found %s),
+            (join ', ', @expected),
+            $type
+        )
+        ->throw;
 }
 
 =head1 COMMANDS
@@ -648,8 +656,16 @@ B<Example:>
 sub command_array { return $TT_OP, 'action => ::array' }
 sub command_null  { return $TT_OP, 'action => ::undef' }
 sub command_do {
+    my ($self) = @_;
+
     m/\G \s+ (\w+)/xgc
-        or die "Expected action name";
+        or MarpaX::Grammar::Preprocessor::ParseException
+            ->new_from_source_f(
+                $self->$_source_ref,
+                q(Expected action name),
+            )
+            ->throw;
+
     return $TT_OP, "action => do_${1}";
 }
 
@@ -813,7 +829,12 @@ sub command_namespace {
     my ($self) = @_;
     my $name = $self->expect($TT_IDENT);
     /\G\s*[{]/mgc
-        or _::croakf q(Expected opening brace after namespace identifier);
+        or MarpaX::Grammar::Preprocessor::ParseException
+            ->new_from_source_f(
+                $self->$_source_ref,
+                q(Expected opening brace after namespace identifier),
+            )
+            ->throw;
     my $scoped = $self->new_with(
         namespace => $name,
         buffer => do { my $b = ''; \$b },
@@ -882,12 +903,24 @@ sub command_doc {
         $docs =~ s/\s*\z//;
     }
     else {
-        my $next_source = substr $_, pos, 20;
-        die sprintf "Expected docstring near %s...", _::pp $next_source;
+        MarpaX::Grammar::Preprocessor::ParseException
+            ->new_from_source_f(
+                $self->$_source_ref,
+                q(Expected docstring)
+            )
+            ->throw;
     }
 
     my $symbol = $self->expect($TT_IDENT);
-    die "Symbol $symbol already documented" if exists $self->$_docs->{$symbol};
+    if (exists $self->$_docs->{$symbol}) {
+        MarpaX::Grammar::Preprocessor::ParseException
+            ->new_from_source_f(
+                $self->$_source_ref,
+                q(Symbol %s already documented),
+                $symbol,
+            )
+            ->throw;
+    }
     $self->$_docs->{$symbol} = $docs;
     return $TT_IDENT, $symbol;
 }
@@ -934,7 +967,6 @@ sub command_optional {
     my ($self) = @_;
     my $cache_ref = $self->$_optional_rule_cache;
     my $rule = $self->expect($TT_IDENT);
-    # uncoverable condition false
     my $optional_rule = $cache_ref->{$rule} //= do {
         my $optional_rule = $rule . $self->$_namespace_separator . "Optional";
 
@@ -1033,15 +1065,30 @@ sub command_include {
     my $name = $self->expect($TT_IDENT);
 
     m/\G\s*[=]/gc
-        or die q(Expected equals sign "=" after namespace in \\include command);
+        or MarpaX::Grammar::Preprocessor::ParseException
+            ->new_from_source_f(
+                $self->$_source_ref,
+                q(Expected equals sign "=" after namespace in \\include command),
+            )
+            ->throw;
 
     m/\G\s*(\S+)/gc
-        or die q(Expected file name in \\include command);
+        or MarpaX::Grammar::Preprocessor::ParseException
+            ->new_from_source_f(
+                $self->$_source_ref,
+                q(Expected file name in \\include command),
+            )
+            ->throw;
     my $file_name = $1;
 
     my $file_loader = $self->$_file_loader;
     if (not _::is_code_ref $file_loader) {
-        die q(The \\include command requires that a file_loader was specified);
+        MarpaX::Grammar::Preprocessor::Exception
+            ->new_f(
+                q(The \\include command requires that a file_loader was specified),
+                [],
+            )
+            ->throw;
     }
 
     my $file_contents = $file_loader->($file_name);
